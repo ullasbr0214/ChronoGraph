@@ -1,9 +1,12 @@
 from fastapi import FastAPI
 
+from app.core.config import settings
+
+
 app = FastAPI(
-    title="ChronoGraph API",
+    title=settings.app_name,
     description="Temporal GraphRAG backend for enterprise forensic analysis",
-    version="0.1.0",
+    version=settings.app_version,
 )
 
 
@@ -11,6 +14,6 @@ app = FastAPI(
 def health_check():
     return {
         "status": "healthy",
-        "service": "ChronoGraph Backend",
-        "version": "0.1.0",
+        "service": settings.app_name,
+        "version": settings.app_version,
     }
