@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.api.routes.graph import router as graph_router
 
 
 app = FastAPI(
@@ -17,3 +18,6 @@ def health_check():
         "service": settings.app_name,
         "version": settings.app_version,
     }
+
+
+app.include_router(graph_router)
