@@ -1,153 +1,166 @@
-import Sidebar from "../components/Sidebar";
-import TopBar from "../components/TopBar";
 import EventCard from "../components/EventCard";
 import { events } from "../data/events";
 
 export default function Dashboard() {
   return (
-    <div className="app-shell">
+    <div className="page-shell">
 
-      <Sidebar />
+      {/* =========================
+          HERO
+      ========================= */}
 
-      <main className="main-content">
+      <section className="hero-section">
 
-        <TopBar />
+        <div>
+          <p className="eyebrow">
+            TEMPORAL GRAPH ANALYSIS
+          </p>
 
-        <section className="hero-section">
+          <h1>
+            Reconstruct what happened.
+            <br />
+            <span>Understand why.</span>
+          </h1>
 
-          <div>
+          <p className="hero-description">
+            ChronoGraph connects events across time,
+            systems and evidence to reconstruct how
+            an incident unfolded.
+          </p>
+        </div>
 
-            <p className="eyebrow">
-              TEMPORAL GRAPH ANALYSIS
-            </p>
+        <div className="case-status">
+          <span className="status-dot" />
+          ANALYSIS READY
+        </div>
 
-            <h1>
-              Reconstruct what happened.
-              <br />
-              <span>Understand why.</span>
-            </h1>
+      </section>
 
-            <p className="hero-description">
-              ChronoGraph connects events across time,
-              systems and evidence to reconstruct how
-              an incident unfolded.
-            </p>
 
-          </div>
+      {/* =========================
+          CASE METRICS
+      ========================= */}
 
-          <div className="case-status">
-            <span className="status-dot" />
-            ANALYSIS READY
-          </div>
+      <section className="metrics">
 
-        </section>
+        <div className="metric-card">
+          <span>TOTAL EVENTS</span>
+          <strong>128</strong>
+          <small>Across 4 sources</small>
+        </div>
 
-        <section className="metrics">
+        <div className="metric-card">
+          <span>RELATIONSHIPS</span>
+          <strong>47</strong>
+          <small>Connected graph nodes</small>
+        </div>
 
-          <div className="metric-card">
-            <span>TOTAL EVENTS</span>
-            <strong>128</strong>
-            <small>Across 4 sources</small>
-          </div>
+        <div className="metric-card">
+          <span>TIME WINDOW</span>
+          <strong>14h</strong>
+          <small>26 Aug 2026</small>
+        </div>
 
-          <div className="metric-card">
-            <span>RELATIONSHIPS</span>
-            <strong>47</strong>
-            <small>Connected graph nodes</small>
-          </div>
+        <div className="metric-card accent">
+          <span>SEQUENCE SCORE</span>
+          <strong>87%</strong>
+          <small>Evidence correlation</small>
+        </div>
 
-          <div className="metric-card">
-            <span>TIME WINDOW</span>
-            <strong>14h</strong>
-            <small>26 Aug 2026</small>
-          </div>
+      </section>
 
-          <div className="metric-card accent">
-            <span>SEQUENCE SCORE</span>
-            <strong>87%</strong>
-            <small>Evidence correlation</small>
-          </div>
 
-        </section>
+      {/* =========================
+          INVESTIGATION AREA
+      ========================= */}
 
-        <section className="dashboard-grid">
+      <section className="dashboard-grid">
 
-          <div className="panel">
+        {/* EVENT STREAM */}
 
-            <div className="panel-header">
+        <div className="panel">
 
-              <div>
-                <p className="eyebrow">
-                  TEMPORAL SEQUENCE
-                </p>
+          <div className="panel-header">
 
-                <h2>
-                  Recent Activity
-                </h2>
-              </div>
+            <div>
+              <p className="eyebrow">
+                TEMPORAL SEQUENCE
+              </p>
 
-              <button>
-                Explore timeline →
-              </button>
-
+              <h2>
+                Recent Activity
+              </h2>
             </div>
 
-            <div className="event-list">
-
-              {events.map((event) => (
-                <EventCard
-                  key={event.event_id}
-                  event={event}
-                />
-              ))}
-
-            </div>
-
-          </div>
-
-          <aside className="panel insight-panel">
-
-            <p className="eyebrow">
-              AI RECONSTRUCTION
-            </p>
-
-            <div className="insight-symbol">
-              ◈
-            </div>
-
-            <h2>
-              A connected
-              <br />
-              sequence emerged.
-            </h2>
-
-            <p>
-              Four events across independent sources
-              appear to form one operational sequence.
-            </p>
-
-            <div className="confidence">
-
-              <div>
-                <span>SEQUENCE CONFIDENCE</span>
-                <strong>87%</strong>
-              </div>
-
-              <div className="confidence-bar">
-                <div style={{ width: "87%" }} />
-              </div>
-
-            </div>
-
-            <button className="investigate-button">
-              Investigate sequence →
+            <button>
+              Explore timeline →
             </button>
 
-          </aside>
+          </div>
 
-        </section>
 
-      </main>
+          <div className="event-list">
+
+            {events.map((event) => (
+              <EventCard
+                key={event.event_id}
+                event={event}
+              />
+            ))}
+
+          </div>
+
+        </div>
+
+
+        {/* AI RECONSTRUCTION */}
+
+        <aside className="panel insight-panel">
+
+          <p className="eyebrow">
+            AI RECONSTRUCTION
+          </p>
+
+          <div className="insight-symbol">
+            ◈
+          </div>
+
+          <h2>
+            A connected
+            <br />
+            sequence emerged.
+          </h2>
+
+          <p>
+            Four events across independent sources
+            appear to form one operational sequence.
+          </p>
+
+
+          <div className="confidence">
+
+            <div>
+              <span>SEQUENCE CONFIDENCE</span>
+
+              <strong>
+                87%
+              </strong>
+            </div>
+
+            <div className="confidence-bar">
+              <div style={{ width: "87%" }} />
+            </div>
+
+          </div>
+
+
+          <button className="investigate-button">
+            Investigate sequence →
+          </button>
+
+        </aside>
+
+      </section>
 
     </div>
   );

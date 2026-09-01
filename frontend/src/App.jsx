@@ -1,29 +1,27 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
+import AppLayout from "./layouts/AppLayout";
 import Dashboard from "./pages/Dashboard";
-import Timeline from "./pages/Timeline";
+import TimelinePage from "./pages/TimelinePage";
 
 export default function App() {
   return (
     <BrowserRouter>
 
-      <Routes>
+      <AppLayout>
 
-        <Route
-          path="/"
-          element={<Dashboard />}
-        />
+        <Routes>
 
-        <Route
-          path="/timeline"
-          element={
-            <div className="app-shell">
-              <Dashboard />
-            </div>
-          }
-        />
+          <Route
+            path="/"
+            element={<Dashboard />}
+          />
 
-      </Routes>
+          <Route path="/timeline" element={<TimelinePage />} />
+
+        </Routes>
+
+      </AppLayout>
 
     </BrowserRouter>
   );

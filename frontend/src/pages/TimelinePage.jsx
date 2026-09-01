@@ -1,202 +1,99 @@
-import {
-  MessageSquare,
-  GitBranch,
-  Mail,
-  Calendar,
-  ArrowDown,
-} from "lucide-react";
+import { events } from "../data/events";
 
-const timelineEvents = [
-  {
-    time: "10:30",
-    source: "SLACK",
-    type: "DISCUSSION",
-    title: "Migration strategy discussed",
-    description:
-      "Engineering team discussed moving infrastructure from AWS to GCP.",
-    icon: MessageSquare,
-  },
-  {
-    time: "11:15",
-    source: "GITHUB",
-    type: "CHANGE",
-    title: "Infrastructure configuration changed",
-    description:
-      "Deployment configuration was modified shortly after the migration discussion.",
-    icon: GitBranch,
-  },
-  {
-    time: "12:05",
-    source: "EMAIL",
-    type: "EVIDENCE",
-    title: "Migration approval received",
-    description:
-      "An approval message was sent to the engineering team.",
-    icon: Mail,
-  },
-  {
-    time: "13:30",
-    source: "MEETING",
-    type: "REVIEW",
-    title: "Infrastructure review scheduled",
-    description:
-      "The infrastructure changes were reviewed by the technical team.",
-    icon: Calendar,
-  },
-];
-
-export default function Timeline() {
+export default function TimelinePage() {
   return (
-    <div className="page-shell">
+    <main className="page">
 
-      <div className="page-title-row">
+      {/* HEADER */}
+      <section className="page-header">
 
         <div>
           <p className="eyebrow">
-            TEMPORAL RECONSTRUCTION
+            TEMPORAL SEQUENCE
           </p>
 
-          <h1>Event Timeline</h1>
+          <h1>
+            Event Timeline
+          </h1>
 
           <p className="page-description">
-            Follow the sequence of events across connected
-            systems and identify how the investigation unfolded.
+            Follow the sequence of events across systems,
+            sources and time.
           </p>
         </div>
 
         <div className="case-status">
-          ● CASE CG-2026-001
+          <span className="status-dot" />
+          TIMELINE READY
         </div>
 
-      </div>
+      </section>
 
-      <div className="timeline-layout">
 
-        <section className="timeline-panel">
+      {/* TIMELINE */}
+      <section className="timeline-container">
 
-          <div className="timeline-header">
-            <div>
-              <p className="eyebrow">
-                CHRONOLOGICAL ORDER
+        <div className="timeline-line" />
+
+        {events.map((event, index) => (
+
+          <div
+            className={`timeline-event ${
+              index % 2 === 0 ? "left" : "right"
+            }`}
+            key={event.event_id}
+          >
+
+            {/* CONNECTION DOT */}
+            <div className="timeline-dot" />
+
+
+            {/* EVENT CARD */}
+            <div className="timeline-card">
+
+              <div className="timeline-card-header">
+
+                <span className="event-source">
+                  {event.source}
+                </span>
+
+                <span className="event-time">
+                  {event.timestamp}
+                </span>
+
+              </div>
+
+
+              <h3>
+                {event.title}
+              </h3>
+
+
+              <p>
+                {event.description}
               </p>
 
-              <h2>26 AUG 2026</h2>
-            </div>
 
-            <span>
-              4 EVENTS
-            </span>
-          </div>
+              <div className="timeline-footer">
 
-          <div className="timeline">
+                <span>
+                  {event.event_id}
+                </span>
 
-            {timelineEvents.map((event, index) => {
-              const Icon = event.icon;
+                <span className="event-type">
+                  {event.event_type}
+                </span>
 
-              return (
-                <div className="timeline-event" key={event.time}>
+              </div>
 
-                  <div className="timeline-time">
-                    {event.time}
-                  </div>
-
-                  <div className="timeline-line">
-
-                    <div className="timeline-node">
-                      <Icon size={15} />
-                    </div>
-
-                    {index !== timelineEvents.length - 1 && (
-                      <div className="timeline-connector" />
-                    )}
-
-                  </div>
-
-                  <div className="timeline-content">
-
-                    <div className="timeline-meta">
-                      <span>{event.source}</span>
-                      <span>{event.type}</span>
-                    </div>
-
-                    <h3>
-                      {event.title}
-                    </h3>
-
-                    <p>
-                      {event.description}
-                    </p>
-
-                    <button>
-                      View evidence →
-                    </button>
-
-                  </div>
-
-                </div>
-              );
-            })}
-
-          </div>
-
-        </section>
-
-        <aside className="sequence-panel">
-
-          <p className="eyebrow">
-            SEQUENCE ANALYSIS
-          </p>
-
-          <div className="sequence-score">
-            <strong>87</strong>
-            <span>%</span>
-          </div>
-
-          <h2>
-            Strong temporal
-            <br />
-            correlation
-          </h2>
-
-          <p>
-            Events occur within a narrow operational
-            window and share related infrastructure context.
-          </p>
-
-          <div className="sequence-flow">
-
-            <div>
-              <span>01</span>
-              Discussion
-            </div>
-
-            <ArrowDown size={14} />
-
-            <div>
-              <span>02</span>
-              Configuration
-            </div>
-
-            <ArrowDown size={14} />
-
-            <div>
-              <span>03</span>
-              Approval
-            </div>
-
-            <ArrowDown size={14} />
-
-            <div>
-              <span>04</span>
-              Review
             </div>
 
           </div>
 
-        </aside>
+        ))}
 
-      </div>
+      </section>
 
-    </div>
+    </main>
   );
 }
