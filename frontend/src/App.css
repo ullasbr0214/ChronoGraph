@@ -546,3 +546,223 @@
     grid-template-columns: 1fr;
   }
 }
+/* =========================
+   TIMELINE
+========================= */
+
+.page-shell {
+  max-width: 1250px;
+  margin: 0 auto;
+}
+
+.page-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 30px;
+  gap: 30px;
+}
+
+.page-title-row h1 {
+  margin: 0;
+  font-size: 40px;
+  letter-spacing: -2px;
+}
+
+.page-description {
+  max-width: 570px;
+  margin: 12px 0 0;
+  color: #657285;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.timeline-layout {
+  display: grid;
+  grid-template-columns: 1.6fr 0.7fr;
+  gap: 15px;
+}
+
+.timeline-panel,
+.sequence-panel {
+  border: 1px solid #1a242f;
+  border-radius: 9px;
+  background: #0b1016;
+  padding: 22px;
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #18212b;
+}
+
+.timeline-header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.timeline-header > span {
+  color: #526174;
+  font-family: "DM Mono", monospace;
+  font-size: 8px;
+}
+
+.timeline {
+  padding-top: 10px;
+}
+
+.timeline-event {
+  display: grid;
+  grid-template-columns: 55px 34px 1fr;
+  min-height: 120px;
+}
+
+.timeline-time {
+  padding-top: 8px;
+  color: #8090a3;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+}
+
+.timeline-line {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.timeline-node {
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  margin-top: 4px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #33495f;
+  border-radius: 50%;
+  background: #0e151e;
+  color: #7eafd7;
+}
+
+.timeline-connector {
+  position: absolute;
+  top: 34px;
+  width: 1px;
+  height: calc(100% - 28px);
+  background: #273440;
+}
+
+.timeline-content {
+  padding: 5px 0 28px 18px;
+}
+
+.timeline-meta {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: #526174;
+  font-family: "DM Mono", monospace;
+  font-size: 7px;
+  letter-spacing: 0.8px;
+}
+
+.timeline-content h3 {
+  margin: 0 0 5px;
+  font-size: 12px;
+}
+
+.timeline-content p {
+  max-width: 500px;
+  margin: 0;
+  color: #626f80;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.timeline-content button {
+  margin-top: 9px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6da6d4;
+  font-size: 8px;
+}
+
+/* Sequence analysis */
+
+.sequence-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.sequence-panel::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  bottom: -70px;
+  width: 180px;
+  height: 180px;
+  border: 1px solid #1d3448;
+  border-radius: 50%;
+}
+
+.sequence-score {
+  display: flex;
+  align-items: baseline;
+  margin: 30px 0 8px;
+}
+
+.sequence-score strong {
+  font-size: 55px;
+  font-weight: 600;
+  letter-spacing: -4px;
+}
+
+.sequence-score span {
+  color: #6d8399;
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+}
+
+.sequence-panel h2 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.15;
+}
+
+.sequence-panel > p:not(.eyebrow) {
+  color: #657285;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.sequence-flow {
+  margin-top: 25px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #8795a6;
+  font-family: "DM Mono", monospace;
+  font-size: 8px;
+}
+
+.sequence-flow div {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid #192530;
+  border-radius: 5px;
+  background: #0c131a;
+}
+
+.sequence-flow div span {
+  color: #526f89;
+}
+
+.sequence-flow svg {
+  color: #3e5368;
+  margin-left: 17px;
+}
