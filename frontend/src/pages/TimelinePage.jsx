@@ -1,6 +1,6 @@
 import {
   MessageSquare,
-  Github,
+  GitBranch,
   Mail,
   Clock3,
   ArrowRight,
@@ -11,7 +11,7 @@ import { events } from "../data/events";
 
 const sourceIcons = {
   Slack: MessageSquare,
-  GitHub: Github,
+  GitHub: GitBranch,
   Email: Mail,
 };
 
