@@ -1,5 +1,6 @@
 import EventCard from "../components/EventCard";
 import { events } from "../data/events";
+import IncidentReplay from "../components/IncidentReplay";
 
 export default function Dashboard() {
   return (
@@ -75,6 +76,8 @@ export default function Dashboard() {
       ========================= */}
 
       <section className="dashboard-grid">
+
+        <IncidentReplay events={events} />
 
         {/* EVENT STREAM */}
 
