@@ -2,6 +2,7 @@ import EventCard from "../components/EventCard";
 import { events } from "../data/events";
 import IncidentReplay from "../components/IncidentReplay";
 import MissingEvidence from "../components/MissingEvidence";
+import RootCausePath from "../components/RootCausePath";
 
 export default function Dashboard() {
   return (
@@ -81,6 +82,8 @@ export default function Dashboard() {
         <IncidentReplay events={events} />
 
         <MissingEvidence events={events} />
+
+        <RootCausePath events={events} />
 
         {/* EVENT STREAM */}
 
