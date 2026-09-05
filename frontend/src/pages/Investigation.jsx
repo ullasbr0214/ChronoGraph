@@ -8,25 +8,130 @@ import {
   ShieldCheck,
   ArrowLeft,
   Sparkles,
+  Brain,
 } from "lucide-react";
 
-import { useLocation, useNavigate } from "react-router-dom";
-import { events } from "../data/events";
-import { generateHypothesis } from "../utils/investigationEngine";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
-const sourceIcons = {
-  Slack: MessageSquare,
-  GitHub: GitBranch,
-  Email: Mail,
-};
+import { events } from "../data/events";
+
+import {
+  generateHypothesis,
+  findSupportingEvidence,
+} from "../utils/investigationEngine";
+
+
+/* =========================================================
+   SOURCE ICON
+========================================================= */
+
+function SourceIcon({ source }) {
+  if (source === "Slack") {
+    return <MessageSquare size={18} />;
+  }
+
+  if (source === "GitHub") {
+    return <GitBranch size={18} />;
+  }
+
+  if (source === "Email") {
+    return <Mail size={18} />;
+  }
+
+  return <Search size={18} />;
+}
+
+
+/* =========================================================
+   TIME FORMATTER
+========================================================= */
+
+function formatTime(timestamp) {
+  if (!timestamp) {
+    return "--:--";
+  }
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+
+/* =========================================================
+   FIND FALLBACK GAP
+========================================================= */
+
+function findFallbackGap(eventList = []) {
+  if (!Array.isArray(eventList) || eventList.length < 2) {
+    return null;
+  }
+
+  const sortedEvents = [...eventList].sort(
+    (a, b) =>
+      new Date(a.timestamp) -
+      new Date(b.timestamp)
+  );
+
+  for (let i = 0; i < sortedEvents.length - 1; i++) {
+    const current = sortedEvents[i];
+    const next = sortedEvents[i + 1];
+
+    const currentTime = new Date(
+      current.timestamp
+    );
+
+    const nextTime = new Date(
+      next.timestamp
+    );
+
+    const minutes = Math.round(
+      (nextTime - currentTime) / 60000
+    );
+
+    if (minutes >= 30) {
+      return {
+        from: current,
+        to: next,
+        minutes,
+      };
+    }
+  }
+
+  return null;
+}
+
+
+/* =========================================================
+   INVESTIGATION PAGE
+========================================================= */
 
 export default function Investigation() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const gap = location.state?.gap;
+  /*
+   * First use the gap sent by MissingEvidence.
+   * If the page was opened directly, find a gap from events.
+   */
+  const gap =
+    location.state?.gap ||
+    findFallbackGap(events);
 
-  // If user opens investigation directly
+
+  /* =======================================================
+     NO GAP
+  ======================================================= */
+
   if (!gap) {
     return (
       <main className="investigation-page">
@@ -36,24 +141,24 @@ export default function Investigation() {
           <AlertTriangle size={28} />
 
           <p className="eyebrow">
-            NO INVESTIGATION CONTEXT
+            INVESTIGATION
           </p>
 
           <h1>
-            No evidence gap selected.
+            No evidence gap selected
           </h1>
 
           <p>
-            Select an unexplained transition from the dashboard
-            to begin a temporal investigation.
+            Return to the evidence view and select
+            an unexplained transition to investigate.
           </p>
 
           <button
-            className="trace-button"
-            onClick={() => navigate("/")}
+            className="gap-action"
+            onClick={() => navigate(-1)}
           >
             <ArrowLeft size={15} />
-            Back to dashboard
+            Return to evidence
           </button>
 
         </div>
@@ -62,120 +167,64 @@ export default function Investigation() {
     );
   }
 
-  const fromTime = new Date(gap.from.timestamp);
-  const toTime = new Date(gap.to.timestamp);
 
-  /*
-   * Find events that occurred around the unexplained gap.
-   */
+  /* =======================================================
+     FIND SUPPORTING EVIDENCE
+  ======================================================= */
 
-  const candidates = events
-    .filter(
-      (event) =>
-        event.event_id !== gap.from.event_id &&
-        event.event_id !== gap.to.event_id
-    )
-    .map((event) => {
-
-      const eventTime = new Date(event.timestamp);
-
-      const distanceFromStart =
-        Math.abs(eventTime - fromTime) / 60000;
-
-      const distanceFromEnd =
-        Math.abs(eventTime - toTime) / 60000;
-
-      const nearestDistance =
-        Math.min(distanceFromStart, distanceFromEnd);
-
-      let score = 0;
+  const candidates =
+    findSupportingEvidence(
+      gap,
+      events
+    );
 
 
-      // Temporal relevance
-      if (nearestDistance <= 15) {
-        score += 45;
-      } else if (nearestDistance <= 30) {
-        score += 35;
-      } else if (nearestDistance <= 60) {
-        score += 25;
-      } else if (nearestDistance <= 120) {
-        score += 10;
-      }
+  /* =======================================================
+     GENERATE HYPOTHESIS
+  ======================================================= */
 
-      // Different source can indicate independent evidence
-      if (
-        event.source !== gap.from.source &&
-        event.source !== gap.to.source
-      ) {
-        score += 20;
-      }
+  const hypothesis =
+    generateHypothesis(
+      gap,
+      candidates
+    );
 
-      // Event type relevance
-      if (
-        event.event_type?.toLowerCase().includes("update") ||
-        event.event_type?.toLowerCase().includes("change") ||
-        event.event_type?.toLowerCase().includes("deployment")
-      ) {
-        score += 20;
-      }
 
-      // Description/title relevance
-      const text = `
-        ${event.title}
-        ${event.description || ""}
-        ${event.event_type || ""}
-      `.toLowerCase();
+  /* =======================================================
+     INVESTIGATION SUMMARY
+  ======================================================= */
 
-      const keywords = [
-        "migration",
-        "infrastructure",
-        "configuration",
-        "deploy",
-        "update",
-        "cloud",
-        "aws",
-        "gcp",
-      ];
+  const topEvidence =
+    candidates.length > 0
+      ? candidates[0].score
+      : 0;
 
-      keywords.forEach((keyword) => {
-        if (text.includes(keyword)) {
-          score += 2;
-        }
-      });
+  const investigationSummary =
+    candidates.length > 0
+      ? `ChronoGraph identified ${candidates.length} related event${
+          candidates.length > 1 ? "s" : ""
+        } that may explain the ${
+          gap.minutes
+        }-minute transition. The strongest supporting evidence has a relevance score of ${topEvidence}%.`
+      : "ChronoGraph could not identify strong supporting evidence for this transition.";
 
-      return {
-        ...event,
-        score: Math.min(score, 99),
-      };
-    })
-    .filter((event) => event.score >= 20)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4);
 
-    const hypothesis = generateHypothesis(
-  gap,
-  candidates
-);
+  /* =======================================================
+     SOURCE TRANSITION
+  ======================================================= */
 
-  const formatTime = (timestamp) =>
-    new Date(timestamp).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const sourceTransition =
+    `${gap.from.source} → ${gap.to.source}`;
 
-  const formatDate = (timestamp) =>
-    new Date(timestamp).toLocaleDateString([], {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
 
   return (
     <main className="investigation-page">
 
-      {/* HEADER */}
+      {/* ===================================================
+          PAGE HEADER
+      =================================================== */}
 
-      <section className="investigation-header">
+      <section className="investigation-hero">
 
         <div>
 
@@ -187,12 +236,13 @@ export default function Investigation() {
             Investigate the gap.
           </h1>
 
-          <p>
-            ChronoGraph is analyzing the unexplained transition
-            between two evidence events.
+          <p className="investigation-subtitle">
+            ChronoGraph is analyzing the unexplained
+            transition between two evidence events.
           </p>
 
         </div>
+
 
         <div className="analysis-status">
           <span />
@@ -202,18 +252,27 @@ export default function Investigation() {
       </section>
 
 
-      {/* MAIN GRID */}
+      {/* ===================================================
+          MAIN GRID
+      =================================================== */}
 
-      <section className="investigation-grid">
+      <div className="investigation-grid">
 
-        {/* LEFT */}
+        {/* =================================================
+            LEFT COLUMN
+        ================================================= */}
 
         <div className="investigation-main">
 
-          <div className="anomaly-card">
 
-            <div className="anomaly-label">
-              <AlertTriangle size={17} />
+          {/* ===============================================
+              TEMPORAL ANOMALY
+          =============================================== */}
+
+          <section className="investigation-card">
+
+            <div className="eyebrow anomaly-label">
+              <AlertTriangle size={14} />
               TEMPORAL ANOMALY
             </div>
 
@@ -221,9 +280,9 @@ export default function Investigation() {
               {gap.minutes} minute unexplained gap
             </h2>
 
-            <p className="anomaly-description">
-              ChronoGraph detected a break in the expected
-              sequence of events.
+            <p className="section-description">
+              ChronoGraph detected a break in the
+              expected sequence of events.
             </p>
 
 
@@ -232,21 +291,19 @@ export default function Investigation() {
             <div className="investigation-event">
 
               <div className="event-icon">
-
-                {(() => {
-                  const Icon =
-                    sourceIcons[gap.from.source] || GitBranch;
-
-                  return <Icon size={19} />;
-                })()}
-
+                <SourceIcon
+                  source={gap.from.source}
+                />
               </div>
 
-              <div>
+              <div className="event-content">
 
-                <span>
-                  {gap.from.source} · {formatTime(gap.from.timestamp)}
-                </span>
+                <div className="event-meta">
+                  {gap.from.source} ·{" "}
+                  {formatTime(
+                    gap.from.timestamp
+                  )}
+                </div>
 
                 <strong>
                   {gap.from.title}
@@ -261,23 +318,21 @@ export default function Investigation() {
             </div>
 
 
-            {/* GAP */}
+            {/* GAP CONNECTOR */}
 
             <div className="investigation-gap">
 
-              <div className="gap-line" />
-
-              <div>
-
-                <strong>
-                  {gap.minutes} MINUTES
-                </strong>
-
-                <span>
-                  UNEXPLAINED TRANSITION
-                </span>
-
+              <div className="gap-vertical-line">
+                <span />
               </div>
+
+              <strong>
+                {gap.minutes} MINUTES
+              </strong>
+
+              <small>
+                UNEXPLAINED TRANSITION
+              </small>
 
             </div>
 
@@ -287,21 +342,19 @@ export default function Investigation() {
             <div className="investigation-event">
 
               <div className="event-icon">
-
-                {(() => {
-                  const Icon =
-                    sourceIcons[gap.to.source] || GitBranch;
-
-                  return <Icon size={19} />;
-                })()}
-
+                <SourceIcon
+                  source={gap.to.source}
+                />
               </div>
 
-              <div>
+              <div className="event-content">
 
-                <span>
-                  {gap.to.source} · {formatTime(gap.to.timestamp)}
-                </span>
+                <div className="event-meta">
+                  {gap.to.source} ·{" "}
+                  {formatTime(
+                    gap.to.timestamp
+                  )}
+                </div>
 
                 <strong>
                   {gap.to.title}
@@ -315,12 +368,14 @@ export default function Investigation() {
 
             </div>
 
-                    </div>
+          </section>
 
 
-          {/* ROOT CAUSE HYPOTHESIS */}
+          {/* ===============================================
+              ROOT CAUSE HYPOTHESIS
+          =============================================== */}
 
-          <div className="hypothesis-card">
+          <section className="hypothesis-card">
 
             <div className="hypothesis-header">
 
@@ -358,11 +413,14 @@ export default function Investigation() {
             </p>
 
 
+            {/* REASONING SIGNALS */}
+
             <div className="hypothesis-signals">
 
               <span className="eyebrow">
                 REASONING SIGNALS
               </span>
+
 
               {hypothesis.signals.map(
                 (signal, index) => (
@@ -373,7 +431,10 @@ export default function Investigation() {
                   >
 
                     <span className="signal-number">
-                      {String(index + 1).padStart(2, "0")}
+                      {String(index + 1).padStart(
+                        2,
+                        "0"
+                      )}
                     </span>
 
                     <span>
@@ -388,25 +449,115 @@ export default function Investigation() {
             </div>
 
 
+            {/* DISCLAIMER */}
+
             <div className="hypothesis-disclaimer">
 
               <ShieldCheck size={14} />
 
               <span>
-                Hypothesis generated from temporal and contextual
-                evidence. Not a confirmed conclusion.
+                Hypothesis generated from temporal
+                and contextual evidence. Not a
+                confirmed conclusion.
               </span>
 
             </div>
 
-          </div>
+          </section>
 
 
-          {/* AI ANALYSIS */}
+          {/* ===============================================
+              AI REASONING SUMMARY
+          =============================================== */}
 
-          <div className="ai-analysis-card">
+          <section className="reasoning-summary-card">
 
-            <div className="ai-analysis-header">
+            <div className="reasoning-summary-header">
+
+              <div className="reasoning-title">
+
+                <div className="reasoning-icon">
+                  <Brain size={19} />
+                </div>
+
+                <div>
+
+                  <p className="eyebrow">
+                    AI REASONING SUMMARY
+                  </p>
+
+                  <h2>
+                    What ChronoGraph found
+                  </h2>
+
+                </div>
+
+              </div>
+
+              <span className="ai-generated">
+                AI GENERATED
+              </span>
+
+            </div>
+
+
+            <p className="reasoning-summary-text">
+              {investigationSummary}
+            </p>
+
+
+            <div className="summary-metrics">
+
+              <div className="summary-metric">
+
+                <span>
+                  RELATED EVENTS
+                </span>
+
+                <strong>
+                  {candidates.length}
+                </strong>
+
+              </div>
+
+
+              <div className="summary-metric">
+
+                <span>
+                  GAP DURATION
+                </span>
+
+                <strong>
+                  {gap.minutes}m
+                </strong>
+
+              </div>
+
+
+              <div className="summary-metric">
+
+                <span>
+                  TOP EVIDENCE
+                </span>
+
+                <strong>
+                  {topEvidence}%
+                </strong>
+
+              </div>
+
+            </div>
+
+          </section>
+
+
+          {/* ===============================================
+              SUPPORTING EVIDENCE
+          =============================================== */}
+
+          <section className="supporting-evidence">
+
+            <div className="supporting-header">
 
               <div>
 
@@ -421,214 +572,217 @@ export default function Investigation() {
 
               </div>
 
-              <div className="ai-ready">
-                <ShieldCheck size={15} />
+              <span className="analysis-complete">
+                <ShieldCheck size={14} />
                 ANALYSIS COMPLETE
-              </div>
+              </span>
 
             </div>
 
 
-            <p className="ai-analysis-description">
-              ChronoGraph searched the available event network
-              for temporal and contextual relationships that
-              could explain this transition.
+            <p className="supporting-description">
+              ChronoGraph searched the available event
+              network for temporal and contextual
+              relationships that could explain this
+              transition.
             </p>
 
 
-            {/* CANDIDATES */}
+            {candidates.length === 0 ? (
 
-            {candidates.length > 0 ? (
+              <div className="no-evidence">
+
+                <Search size={18} />
+
+                <span>
+                  No additional supporting evidence
+                  was found near this transition.
+                </span>
+
+              </div>
+
+            ) : (
 
               <div className="candidate-list">
 
-                {candidates.map((event) => {
+                {candidates.map(
+                  (candidate, index) => (
 
-                  const Icon =
-                    sourceIcons[event.source] || GitBranch;
-
-                  return (
-                    <div
-                      className="evidence-candidate"
-                      key={event.event_id}
+                    <article
+                      className="candidate-card"
+                      key={
+                        candidate.event_id ||
+                        index
+                      }
                     >
 
                       <div className="candidate-icon">
-                        <Icon size={18} />
+
+                        <SourceIcon
+                          source={
+                            candidate.source
+                          }
+                        />
+
                       </div>
+
 
                       <div className="candidate-content">
 
-                        <div className="candidate-top">
+                        <div className="candidate-meta">
 
                           <span>
-                            {event.source}
+                            {candidate.source}
                           </span>
 
                           <span>
-                            {formatTime(event.timestamp)}
+                            {formatTime(
+                              candidate.timestamp
+                            )}
                           </span>
 
                         </div>
 
-                        <strong>
-                          {event.title}
-                        </strong>
+
+                        <h3>
+                          {candidate.title}
+                        </h3>
+
 
                         <small>
-                          {event.event_id} · {formatDate(event.timestamp)}
+                          {candidate.event_id}
                         </small>
 
+
                         <p>
-                          Temporal proximity and event context
-                          suggest this evidence may help explain
-                          the transition.
+                          {candidate.description ||
+                            "Temporal proximity and event context suggest this evidence may help explain the transition."}
                         </p>
 
                       </div>
 
+
                       <div className="candidate-score">
 
                         <strong>
-                          {event.score}%
+                          {candidate.score}%
                         </strong>
 
                         <span>
                           RELEVANCE
                         </span>
 
-                        <div className="score-bar">
-                          <div
-                            style={{
-                              width: `${event.score}%`,
-                            }}
-                          />
-                        </div>
-
                       </div>
 
-                    </div>
-                  );
-                })}
+                    </article>
 
-              </div>
-
-            ) : (
-
-              <div className="no-evidence">
-
-                <Search size={20} />
-
-                <div>
-                  <strong>
-                    No strong supporting evidence found.
-                  </strong>
-
-                  <p>
-                    The transition may require external evidence
-                    or additional data sources.
-                  </p>
-                </div>
+                  )
+                )}
 
               </div>
 
             )}
 
-          </div>
+          </section>
 
         </div>
 
 
-        {/* RIGHT SIDEBAR */}
+        {/* =================================================
+            RIGHT COLUMN
+        ================================================= */}
 
         <aside className="investigation-sidebar">
 
-          <p className="eyebrow">
-            INVESTIGATION CONTEXT
-          </p>
+          <div className="context-card">
 
-          <h2>
-            What happened
-            <br />
-            between these events?
-          </h2>
+            <p className="eyebrow">
+              INVESTIGATION CONTEXT
+            </p>
 
-          <p>
-            The investigation engine examines temporal
-            relationships between independent evidence sources.
-          </p>
+            <h2>
+              What happened
+              <br />
+              between these events?
+            </h2>
 
-
-          <div className="context-item">
-
-            <Clock3 size={18} />
-
-            <div>
-
-              <span>
-                GAP DURATION
-              </span>
-
-              <strong>
-                {gap.minutes} minutes
-              </strong>
-
-            </div>
-
-          </div>
+            <p>
+              The investigation engine examines
+              the temporal relationship between
+              independent evidence sources.
+            </p>
 
 
-          <div className="context-item">
+            <div className="context-stat">
 
-            <GitBranch size={18} />
+              <Clock3 size={18} />
 
-            <div>
+              <div>
 
-              <span>
-                SOURCE TRANSITION
-              </span>
+                <span>
+                  GAP DURATION
+                </span>
 
-              <strong>
-                {gap.from.source} → {gap.to.source}
-              </strong>
+                <strong>
+                  {gap.minutes} minutes
+                </strong>
+
+              </div>
 
             </div>
 
-          </div>
 
+            <div className="context-stat">
 
-          <div className="context-item">
+              <GitBranch size={18} />
 
-            <ShieldCheck size={18} />
+              <div>
 
-            <div>
+                <span>
+                  SOURCE TRANSITION
+                </span>
 
-              <span>
-                CURRENT CONFIDENCE
-              </span>
+                <strong>
+                  {sourceTransition}
+                </strong>
 
-              <strong>
-                {candidates.length
-                  ? `${Math.max(...candidates.map((e) => e.score))}%`
-                  : "LOW"}
-              </strong>
+              </div>
 
             </div>
 
+
+            <div className="context-stat">
+
+              <ShieldCheck size={18} />
+
+              <div>
+
+                <span>
+                  CURRENT CONFIDENCE
+                </span>
+
+                <strong>
+                  {hypothesis.confidence}%
+                </strong>
+
+              </div>
+
+            </div>
+
+
+            <button
+              className="return-button"
+              onClick={() => navigate(-1)}
+            >
+              <ArrowLeft size={15} />
+              Return to evidence
+            </button>
+
           </div>
-
-
-          <button
-            className="back-investigation"
-            onClick={() => navigate("/")}
-          >
-            <ArrowLeft size={15} />
-            Return to evidence
-          </button>
 
         </aside>
 
-      </section>
+      </div>
 
     </main>
   );
