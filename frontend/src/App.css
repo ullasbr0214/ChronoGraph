@@ -2893,3 +2893,187 @@
     gap: 10px;
   }
 }
+
+/* ================================
+   MISSING EVIDENCE
+================================ */
+
+.missing-evidence {
+  border: 1px solid #1c2a38;
+  border-radius: 14px;
+  padding: 24px;
+  background: linear-gradient(
+    145deg,
+    #091019,
+    #060a0f
+  );
+}
+
+.missing-evidence-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.missing-evidence-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.missing-evidence-icon {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #27384a;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffb86b;
+}
+
+.missing-evidence h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #f1f5f9;
+}
+
+.missing-evidence-description {
+  color: #71839a;
+  font-size: 14px;
+  margin: 5px 0 0;
+}
+
+.evidence-gap {
+  border: 1px solid #182533;
+  border-radius: 10px;
+  padding: 16px;
+  margin-top: 12px;
+  background: #080e15;
+}
+
+.evidence-gap-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.evidence-gap-source {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: #5f7892;
+  text-transform: uppercase;
+}
+
+.evidence-gap-time {
+  font-size: 12px;
+  color: #8ba0b7;
+}
+
+.evidence-gap-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e8eef5;
+  margin-bottom: 8px;
+}
+
+.evidence-gap-duration {
+  font-size: 12px;
+  color: #ffb86b;
+  margin-bottom: 12px;
+}
+
+.investigate-gap-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 13px;
+  border-radius: 7px;
+  border: 1px solid #25445c;
+  background: #0b1722;
+  color: #69c8ff;
+  cursor: pointer;
+  font-size: 12px;
+  transition: 0.2s ease;
+}
+
+.investigate-gap-button:hover {
+  background: #102536;
+  border-color: #3d789d;
+}
+
+
+/* ================================
+   ROOT CAUSE PATH
+================================ */
+
+.root-cause-path {
+  margin-top: 24px;
+  border: 1px solid #1c2a38;
+  border-radius: 14px;
+  padding: 26px;
+  background: #080d13;
+}
+
+.root-cause-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 25px;
+}
+
+.root-cause-path h2 {
+  margin: 4px 0 7px;
+  color: #f1f5f9;
+  font-size: 22px;
+}
+
+.root-cause-description {
+  color: #71839a;
+  font-size: 13px;
+}
+
+.path-score {
+  border: 1px solid #20384b;
+  border-radius: 9px;
+  padding: 12px 20px;
+  text-align: center;
+}
+
+.path-score span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: #5f7892;
+}
+
+.path-score strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 22px;
+  color: #69c8ff;
+}
+
+
+/* ================================
+   RESPONSIVE
+================================ */
+
+@media (max-width: 900px) {
+
+  .root-cause-header {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .path-score {
+    align-self: flex-start;
+  }
+
+  .missing-evidence-header {
+    align-items: flex-start;
+  }
+
+}

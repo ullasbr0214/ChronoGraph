@@ -17,8 +17,7 @@ export default function RootCausePath({ events = [] }) {
 
   const sortedEvents = [...events].sort(
     (a, b) =>
-      new Date(a.timestamp) -
-      new Date(b.timestamp)
+      new Date(a.timestamp) - new Date(b.timestamp)
   );
 
   const stages = [
@@ -66,66 +65,69 @@ export default function RootCausePath({ events = [] }) {
 
       <div className="cause-path">
 
-        {sortedEvents.slice(0, 3).map((event, index) => {
+        {sortedEvents.slice(0, 3).map(
+          (event, index) => {
 
-          const Icon =
-            icons[event.source] || GitBranch;
+            const Icon =
+              icons[event.source] || GitBranch;
 
-          const stage =
-            stages[index] || stages[2];
+            const stage =
+              stages[index] || stages[2];
 
-          return (
-            <div
-              className="cause-step"
-              key={event.event_id}
-            >
+            return (
+              <div
+                className="cause-step"
+                key={event.event_id}
+              >
 
-              <div className="cause-stage">
-                {stage.label}
-              </div>
-
-              <div className="cause-node">
-                <Icon size={18} />
-              </div>
-
-              <div className="cause-content">
-
-                <span>
-                  {event.source} · {event.event_id}
-                </span>
-
-                <h3>
-                  {event.title}
-                </h3>
-
-                <p>
-                  {stage.description}
-                </p>
-
-                <small>
-                  {new Date(
-                    event.timestamp
-                  ).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </small>
-
-              </div>
-
-              {index <
-                Math.min(sortedEvents.length, 3) - 1 && (
-                <div className="cause-connector">
-                  <ArrowDown size={15} />
+                <div className="cause-stage">
+                  {stage.label}
                 </div>
-              )}
-
-            </div>
-          );
-        })}
 
 
-        {/* AI CONCLUSION */}
+                <div className="cause-node">
+                  <Icon size={18} />
+                </div>
+
+
+                <div className="cause-content">
+
+                  <span>
+                    {event.source} · {event.event_id}
+                  </span>
+
+                  <h3>
+                    {event.title}
+                  </h3>
+
+                  <p>
+                    {stage.description}
+                  </p>
+
+                  <small>
+                    {new Date(
+                      event.timestamp
+                    ).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </small>
+
+                </div>
+
+
+                {index <
+                  Math.min(sortedEvents.length, 3) - 1 && (
+                  <div className="cause-connector">
+                    <ArrowDown size={15} />
+                  </div>
+                )}
+
+              </div>
+            )
+          }
+        )}
+
 
         <div className="cause-conclusion">
 
@@ -140,8 +142,7 @@ export default function RootCausePath({ events = [] }) {
             </span>
 
             <h3>
-              Probable migration sequence
-              identified.
+              Probable migration sequence identified.
             </h3>
 
             <p>
