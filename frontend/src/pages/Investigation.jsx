@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import {
   AlertTriangle,
   Clock3,
@@ -10,10 +12,14 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import EvidenceMap from "../components/EvidenceMap";
+
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { events } from "../data/events";
+
 import { generateHypothesis } from "../utils/investigationEngine";
+
 
 const sourceIcons = {
   Slack: MessageSquare,
@@ -21,11 +27,35 @@ const sourceIcons = {
   Email: Mail,
 };
 
+
 export default function Investigation() {
+
   const location = useLocation();
+
   const navigate = useNavigate();
 
   const gap = location.state?.gap;
+
+  const [isAnalyzing, setIsAnalyzing] = useState(true);
+
+
+  useEffect(() => {
+
+    if (!gap) {
+      setIsAnalyzing(false);
+      return;
+    }
+
+    setIsAnalyzing(true);
+
+    const timer = setTimeout(() => {
+      setIsAnalyzing(false);
+    }, 1400);
+
+    return () => clearTimeout(timer);
+
+  }, [gap]);
+
 
   /*
    * =====================================================
@@ -34,7 +64,9 @@ export default function Investigation() {
    */
 
   if (!gap) {
+
     return (
+
       <main className="investigation-page">
 
         <div className="investigation-empty">
@@ -58,15 +90,20 @@ export default function Investigation() {
             className="trace-button"
             onClick={() => navigate("/")}
           >
+
             <ArrowLeft size={15} />
+
             Back to dashboard
+
           </button>
 
         </div>
 
       </main>
+
     );
   }
+
 
   /*
    * =====================================================
@@ -75,7 +112,9 @@ export default function Investigation() {
    */
 
   const fromTime = new Date(gap.from.timestamp);
+
   const toTime = new Date(gap.to.timestamp);
+
 
   /*
    * =====================================================
@@ -84,11 +123,13 @@ export default function Investigation() {
    */
 
   const candidates = events
+
     .filter(
       (event) =>
         event.event_id !== gap.from.event_id &&
         event.event_id !== gap.to.event_id
     )
+
     .map((event) => {
 
       const eventTime = new Date(event.timestamp);
@@ -105,21 +146,32 @@ export default function Investigation() {
           distanceFromEnd
         );
 
+
       let score = 0;
+
 
       /*
        * Temporal relevance
        */
 
       if (nearestDistance <= 15) {
+
         score += 45;
+
       } else if (nearestDistance <= 30) {
+
         score += 35;
+
       } else if (nearestDistance <= 60) {
+
         score += 25;
+
       } else if (nearestDistance <= 120) {
+
         score += 10;
+
       }
+
 
       /*
        * Independent source
@@ -129,8 +181,11 @@ export default function Investigation() {
         event.source !== gap.from.source &&
         event.source !== gap.to.source
       ) {
+
         score += 20;
+
       }
+
 
       /*
        * Event type relevance
@@ -139,13 +194,17 @@ export default function Investigation() {
       const eventType =
         event.event_type?.toLowerCase() || "";
 
+
       if (
         eventType.includes("update") ||
         eventType.includes("change") ||
         eventType.includes("deployment")
       ) {
+
         score += 20;
+
       }
+
 
       /*
        * Title / description relevance
@@ -156,6 +215,7 @@ export default function Investigation() {
         ${event.description || ""}
         ${event.event_type || ""}
       `.toLowerCase();
+
 
       const keywords = [
         "migration",
@@ -168,24 +228,35 @@ export default function Investigation() {
         "gcp",
       ];
 
+
       keywords.forEach((keyword) => {
+
         if (text.includes(keyword)) {
+
           score += 2;
+
         }
+
       });
+
 
       return {
         ...event,
         score: Math.min(score, 99),
       };
+
     })
+
     .filter(
       (event) => event.score >= 20
     )
+
     .sort(
       (a, b) => b.score - a.score
     )
+
     .slice(0, 4);
+
 
   /*
    * =====================================================
@@ -197,6 +268,7 @@ export default function Investigation() {
     gap,
     candidates
   );
+
 
   /*
    * =====================================================
@@ -210,6 +282,7 @@ export default function Investigation() {
       minute: "2-digit",
     });
 
+
   const formatDate = (timestamp) =>
     new Date(timestamp).toLocaleDateString([], {
       day: "2-digit",
@@ -217,20 +290,21 @@ export default function Investigation() {
       year: "numeric",
     });
 
+
   /*
    * =====================================================
    * TOP EVIDENCE
    * =====================================================
    *
-   * IMPORTANT:
-   * TOP EVIDENCE must use candidate score.
-   * It should NOT use hypothesis.confidence.
+   * TOP EVIDENCE uses candidate score.
+   * It does NOT use hypothesis.confidence.
    */
 
   const topEvidence =
     candidates.length > 0
       ? candidates[0].score
       : 0;
+
 
   /*
    * =====================================================
@@ -245,6 +319,7 @@ export default function Investigation() {
         } that may explain the ${gap.minutes}-minute transition. The strongest supporting evidence has a relevance score of ${topEvidence}%.`
       : "ChronoGraph could not identify strong supporting evidence for this transition.";
 
+
   /*
    * =====================================================
    * PAGE
@@ -252,7 +327,9 @@ export default function Investigation() {
    */
 
   return (
+
     <main className="investigation-page">
+
 
       {/* =================================================
           HEADER
@@ -277,15 +354,19 @@ export default function Investigation() {
 
         </div>
 
+
         <div className="investigation-status">
 
           <span className="status-dot" />
 
-          ANALYSIS READY
+          {isAnalyzing
+            ? "ANALYZING EVIDENCE"
+            : "ANALYSIS COMPLETE"}
 
         </div>
 
       </section>
+
 
 
       {/* =================================================
@@ -293,6 +374,7 @@ export default function Investigation() {
       ================================================= */}
 
       <section className="investigation-grid">
+
 
         {/* =================================================
             LEFT CONTENT
@@ -433,6 +515,7 @@ export default function Investigation() {
           </div>
 
 
+
           {/* =================================================
               ROOT CAUSE HYPOTHESIS
           ================================================= */}
@@ -471,6 +554,98 @@ export default function Investigation() {
               </div>
 
             </div>
+
+            {/* =================================================
+    INVESTIGATION VERDICT
+================================================= */}
+
+<div className="investigation-verdict">
+
+  <div className="verdict-header">
+
+    <div>
+      <p className="eyebrow">
+        <Sparkles size={13} />
+        INVESTIGATION VERDICT
+      </p>
+
+      <h2>
+        {hypothesis.title}
+      </h2>
+    </div>
+
+    <div className="verdict-confidence">
+      <strong>
+        {hypothesis.confidence}%
+      </strong>
+
+      <span>
+        CONFIDENCE
+      </span>
+    </div>
+
+  </div>
+
+
+  <div className="verdict-body">
+
+    <div className="verdict-item">
+
+      <span>
+        WHAT WE KNOW
+      </span>
+
+      <strong>
+        {candidates.length} related evidence
+        {candidates.length !== 1 ? "s" : ""} identified
+      </strong>
+
+    </div>
+
+
+    <div className="verdict-item">
+
+      <span>
+        UNEXPLAINED WINDOW
+      </span>
+
+      <strong>
+        {gap.minutes} minutes
+      </strong>
+
+    </div>
+
+
+    <div className="verdict-item">
+
+      <span>
+        STRONGEST SIGNAL
+      </span>
+
+      <strong>
+        {candidates.length > 0
+          ? candidates[0].title
+          : "No strong signal found"}
+      </strong>
+
+    </div>
+
+  </div>
+
+
+  <div className="verdict-note">
+
+    <ShieldCheck size={15} />
+
+    <span>
+      This verdict summarizes the strongest available
+      evidence. Investigators should verify the underlying
+      events before treating it as a confirmed conclusion.
+    </span>
+
+  </div>
+
+</div>
 
 
             <p className="hypothesis-explanation">
@@ -528,6 +703,7 @@ export default function Investigation() {
           </div>
 
 
+
           {/* =================================================
               AI REASONING SUMMARY
           ================================================= */}
@@ -560,11 +736,13 @@ export default function Investigation() {
           </div>
 
 
+
           {/* =================================================
               SUMMARY METRICS
           ================================================= */}
 
           <div className="investigation-summary-metrics">
+
 
             <div className="summary-metric">
 
@@ -604,7 +782,9 @@ export default function Investigation() {
 
             </div>
 
+
           </div>
+
 
 
           {/* =================================================
@@ -612,6 +792,27 @@ export default function Investigation() {
           ================================================= */}
 
           <div className="ai-analysis-card">
+
+
+            {/* =================================================
+                EVIDENCE MAP
+            ================================================= */}
+
+            <div className="evidence-map-section">
+
+              <EvidenceMap
+                events={events}
+                gap={gap}
+                candidates={candidates}
+              />
+
+            </div>
+
+
+
+            {/* =================================================
+                AI ANALYSIS HEADER
+            ================================================= */}
 
             <div className="ai-analysis-header">
 
@@ -636,22 +837,30 @@ export default function Investigation() {
 
                 <ShieldCheck size={15} />
 
-                ANALYSIS COMPLETE
+                {isAnalyzing
+                  ? "CORRELATING EVIDENCE"
+                  : "ANALYSIS COMPLETE"}
 
               </div>
 
             </div>
 
 
+
             <p className="ai-analysis-description">
+
               ChronoGraph searched the available event
               network for temporal and contextual
               relationships that could explain this
               transition.
+
             </p>
 
 
-            {/* CANDIDATES */}
+
+            {/* =================================================
+                CANDIDATES
+            ================================================= */}
 
             {candidates.length > 0 ? (
 
@@ -663,12 +872,14 @@ export default function Investigation() {
                     sourceIcons[event.source] ||
                     GitBranch;
 
+
                   return (
 
                     <div
                       className="evidence-candidate"
                       key={event.event_id}
                     >
+
 
                       <div className="candidate-icon">
 
@@ -677,7 +888,9 @@ export default function Investigation() {
                       </div>
 
 
+
                       <div className="candidate-content">
+
 
                         <div className="candidate-top">
 
@@ -715,6 +928,7 @@ export default function Investigation() {
                       </div>
 
 
+
                       <div className="candidate-score">
 
                         <strong>
@@ -737,6 +951,7 @@ export default function Investigation() {
                         </div>
 
                       </div>
+
 
                     </div>
 
@@ -769,9 +984,12 @@ export default function Investigation() {
 
             )}
 
+
           </div>
 
+
         </div>
+
 
 
         {/* =================================================
@@ -779,6 +997,7 @@ export default function Investigation() {
         ================================================= */}
 
         <aside className="investigation-sidebar">
+
 
           <p className="eyebrow">
             INVESTIGATION CONTEXT
@@ -797,6 +1016,7 @@ export default function Investigation() {
             temporal relationship between independent
             evidence sources.
           </p>
+
 
 
           {/* GAP DURATION */}
@@ -820,6 +1040,7 @@ export default function Investigation() {
           </div>
 
 
+
           {/* SOURCE TRANSITION */}
 
           <div className="context-item">
@@ -839,6 +1060,7 @@ export default function Investigation() {
             </div>
 
           </div>
+
 
 
           {/* CURRENT CONFIDENCE */}
@@ -864,6 +1086,7 @@ export default function Investigation() {
           </div>
 
 
+
           {/* BACK BUTTON */}
 
           <button
@@ -877,10 +1100,15 @@ export default function Investigation() {
 
           </button>
 
+
         </aside>
+
 
       </section>
 
+
     </main>
+
   );
+
 }

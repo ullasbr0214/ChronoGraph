@@ -485,3 +485,90 @@ a {
     margin-left: 0;
   }
 }
+
+/* ================================
+   INVESTIGATION VERDICT
+================================ */
+
+.investigation-verdict {
+  margin-top: 24px;
+  padding: 28px;
+  border: 1px solid #1e2a38;
+  border-radius: 16px;
+  background: #081018;
+}
+
+.verdict-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 26px;
+}
+
+.verdict-header h2 {
+  margin: 10px 0 0;
+  font-size: 22px;
+  line-height: 1.35;
+}
+
+.verdict-confidence {
+  min-width: 105px;
+  padding: 12px 15px;
+  border: 1px solid #1e2a38;
+  border-radius: 10px;
+  text-align: right;
+}
+
+.verdict-confidence strong {
+  display: block;
+  font-size: 25px;
+}
+
+.verdict-confidence span {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  opacity: 0.5;
+}
+
+.verdict-body {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid #18232f;
+  border-bottom: 1px solid #18232f;
+}
+
+.verdict-item {
+  padding: 18px;
+  border-right: 1px solid #18232f;
+}
+
+.verdict-item:last-child {
+  border-right: none;
+}
+
+.verdict-item span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  opacity: 0.5;
+}
+
+.verdict-item strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.verdict-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.55;
+}
