@@ -1112,3 +1112,16 @@ export default function Investigation() {
   );
 
 }
+
+export async function getEvents() {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/graph/events`
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to fetch events");
+  }
+
+  return response.json();
+}
