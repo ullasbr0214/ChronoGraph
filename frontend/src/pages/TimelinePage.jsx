@@ -348,10 +348,14 @@ export default function TimelinePage() {
                             EVENT
                           </span>
 
-                          <button>
-                            Inspect
-                            <ArrowRight size={14} />
-                          </button>
+                          <button
+  onClick={() =>
+    window.location.href = `/investigation?event=${event.event_id}`
+  }
+>
+  Inspect
+  <ArrowRight size={14} />
+</button>
 
                         </div>
 
