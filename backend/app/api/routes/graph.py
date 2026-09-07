@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.db.neo4j import neo4j_connection
-from app.models.responses import GraphEvent
+from app.db.neo4j import Neo4jDatabase
 
 
 router = APIRouter(
@@ -10,62 +9,170 @@ router = APIRouter(
 )
 
 
+# ---------------------------------------------------------
+# Graph health
+# ---------------------------------------------------------
+
 @router.get("/health")
 def graph_health():
-    try:
-        neo4j_connection.verify_connection()
-
-        return {
-            "status": "healthy",
-            "database": "Neo4j",
-            "connected": True,
-        }
-
-    except Exception as error:
-        return {
-            "status": "unhealthy",
-            "database": "Neo4j",
-            "connected": False,
-            "error": str(error),
-        }
-
-
-@router.post("/events")
-def create_event(event: GraphEvent):
-
-    query = """
-    MERGE (e:Event {event_id: $event_id})
-    SET e.event_type = $event_type,
-        e.title = $title,
-        e.source = $source,
-        e.timestamp = datetime($timestamp),
-        e.description = $description
-    RETURN
-        e.event_id AS event_id,
-        e.event_type AS event_type,
-        e.title AS title,
-        e.source AS source,
-        e.timestamp AS timestamp,
-        e.description AS description
-    """
+    database = None
 
     try:
-        result = neo4j_connection.execute_query(
-            query,
-            event.model_dump(mode="json"),
-        )
+        database = Neo4jDatabase()
 
-        if not result:
-            raise HTTPException(
-                status_code=500,
-                detail="Event was not created in Neo4j",
-            )
+        connected = database.verify_connection()
 
-        return result[0]
+        return {
+            "status": "healthy" if connected else "unhealthy",
+            "neo4j_connected": connected,
+        }
 
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail=f"Neo4j connection failed: {str(error)}",
         )
-        
+
+    finally:
+        if database:
+            database.close()
+
+
+# ---------------------------------------------------------
+# Get all events
+# ---------------------------------------------------------
+
+@router.get("/events")
+def get_events():
+    database = None
+
+    try:
+        database = Neo4jDatabase()
+
+        events = database.get_events()
+
+        return {
+            "success": True,
+            "count": len(events),
+            "events": events,
+        }
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve events: {str(error)}",
+        )
+
+    finally:
+        if database:
+            database.close()
+
+
+# ---------------------------------------------------------
+# Get one event
+# ---------------------------------------------------------
+
+@router.get("/events/{event_id}")
+def get_event(event_id: str):
+    database = None
+
+    try:
+        database = Neo4jDatabase()
+
+        event = database.get_event(event_id)
+
+        if not event:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Event '{event_id}' not found",
+            )
+
+        return {
+            "success": True,
+            "event": event,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve event: {str(error)}",
+        )
+
+    finally:
+        if database:
+            database.close()
+
+
+# ---------------------------------------------------------
+# Get related events
+# ---------------------------------------------------------
+
+@router.get("/events/{event_id}/related")
+def get_related_events(event_id: str):
+    database = None
+
+    try:
+        database = Neo4jDatabase()
+
+        event = database.get_event(event_id)
+
+        if not event:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Event '{event_id}' not found",
+            )
+
+        related_events = database.get_related_events(event_id)
+
+        return {
+            "success": True,
+            "event_id": event_id,
+            "count": len(related_events),
+            "related_events": related_events,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve related events: {str(error)}",
+        )
+
+    finally:
+        if database:
+            database.close()
+
+
+# ---------------------------------------------------------
+# Get complete graph
+# ---------------------------------------------------------
+
+@router.get("/")
+def get_graph():
+    database = None
+
+    try:
+        database = Neo4jDatabase()
+
+        graph = database.get_graph()
+
+        return {
+            "success": True,
+            "nodes": graph["nodes"],
+            "relationships": graph["relationships"],
+        }
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve graph: {str(error)}",
+        )
+
+    finally:
+        if database:
+            database.close()
