@@ -1,16 +1,27 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Project root:
+# ChronoGraph/backend/
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    app_name: str = "ChronoGraph"
+    app_name: str = "ChronoGraph API"
     app_version: str = "1.0.0"
+    debug: bool = True
 
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_username: str = "neo4j"
-    neo4j_password: str = "password"
+    neo4j_uri: str
+    neo4j_username: str
+    neo4j_password: str
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 settings = Settings()
