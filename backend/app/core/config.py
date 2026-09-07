@@ -3,8 +3,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# Project root:
-# ChronoGraph/backend/
+# backend/
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 
