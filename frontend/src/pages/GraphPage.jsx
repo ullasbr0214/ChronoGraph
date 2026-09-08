@@ -9,7 +9,7 @@ import {
   X
 } from "lucide-react";
 
-import { getGraph } from "../services/api";
+import { getEvents } from "../services/api";
 
 const sourceIcons = {
   Slack: MessageSquare,
@@ -30,15 +30,24 @@ useEffect(() => {
       setIsLoading(true);
       setError("");
 
-      const response = await getGraph();
+      const response = await getEvents();
 
-      console.log("Graph response:", response);
+      console.log(
+        "GRAPH BACKEND RESPONSE:",
+        JSON.stringify(response, null, 2)
+      );
 
-      setEvents(response.nodes || []);
-      setRelationships(response.relationships || []);
+      if (Array.isArray(response)) {
+        setEvents(response);
+        setRelationships([]);
+      } else {
+        setEvents(response.events || []);
+        setRelationships(response.relationships || []);
+      }
+
     } catch (error) {
       console.error("Failed to load graph:", error);
-      setError(error.message || "Failed to load graph");
+      setError(error.message || "Failed to load graph data");
     } finally {
       setIsLoading(false);
     }
@@ -357,22 +366,22 @@ useEffect(() => {
 
               <div className="graph-summary">
 
-                <div>
-                  <strong>{events.length}</strong>
-<span>EVENTS</span>
-                </div>
+  <div>
+    <strong>{events.length}</strong>
+    <span>EVENTS</span>
+  </div>
 
-                <div>
-                  <strong>{relationships.length}</strong>
-                  <span>LINKS</span>
-                </div>
+  <div>
+    <strong>{relationships.length}</strong>
+    <span>LINKS</span>
+  </div>
 
-                <div>
-                  <strong>87%</strong>
-                  <span>CONFIDENCE</span>
-                </div>
+  <div>
+    <strong>87%</strong>
+    <span>CONFIDENCE</span>
+  </div>
 
-              </div>
+</div>
 
             </>
 
