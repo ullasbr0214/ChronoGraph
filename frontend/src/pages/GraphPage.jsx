@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   GitBranch,
@@ -16,15 +22,24 @@ import {
 
 import { getGraph } from "../services/api";
 
+/* =========================================================
+   SOURCE ICONS
+========================================================= */
+
 const sourceIcons = {
   Slack: MessageSquare,
   GitHub: GitBranch,
   Email: Mail,
+
   "System Log": ShieldCheck,
   "Security Log": ShieldCheck,
   "Network Log": GitBranch,
   "Application Log": ShieldCheck,
 };
+
+/* =========================================================
+   DEFAULT NODE POSITIONS
+========================================================= */
 
 const DEFAULT_POSITIONS = [
   {
@@ -51,14 +66,32 @@ const DEFAULT_POSITIONS = [
     left: "75%",
     top: "20%",
   },
+  {
+    left: "50%",
+    top: "22%",
+  },
+  {
+    left: "55%",
+    top: "75%",
+  },
 ];
+
+/* =========================================================
+   HELPERS
+========================================================= */
 
 function getEventId(event) {
   return event?.id || event?.event_id || null;
 }
 
+function getSourceIcon(source) {
+  return sourceIcons[source] || GitBranch;
+}
+
 function formatTime(timestamp) {
-  if (!timestamp) return "--:--";
+  if (!timestamp) {
+    return "--:--";
+  }
 
   const date = new Date(timestamp);
 
@@ -73,29 +106,15 @@ function formatTime(timestamp) {
   });
 }
 
-function formatDate(timestamp) {
-  if (!timestamp) return "Unknown date";
-
-  const date = new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown date";
+function formatDateTime(timestamp) {
+  if (!timestamp) {
+    return "Unknown";
   }
 
-  return date.toLocaleDateString([], {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function formatDateTime(timestamp) {
-  if (!timestamp) return "Unknown";
-
   const date = new Date(timestamp);
 
   if (Number.isNaN(date.getTime())) {
-    return timestamp;
+    return String(timestamp);
   }
 
   return date.toLocaleString([], {
@@ -108,9 +127,11 @@ function formatDateTime(timestamp) {
   });
 }
 
-function getSourceIcon(source) {
-  return sourceIcons[source] || GitBranch;
-}
+/* =========================================================
+   FALLBACK TEMPORAL RELATIONSHIPS
+
+   Used only when Neo4j currently has no relationships.
+========================================================= */
 
 function createTemporalRelationships(events) {
   if (!events || events.length < 2) {
@@ -137,27 +158,92 @@ function createTemporalRelationships(events) {
     .filter(Boolean);
 }
 
+/* =========================================================
+   NORMALIZE BACKEND RELATIONSHIPS
+
+   Supports:
+   {
+     source,
+     target,
+     relationship
+   }
+
+   and:
+   {
+     from_id,
+     to_id,
+     relationship
+   }
+========================================================= */
+
+function normalizeRelationships(relationships) {
+  if (!Array.isArray(relationships)) {
+    return [];
+  }
+
+  return relationships
+    .map((relationship) => {
+      const source =
+        relationship?.source ||
+        relationship?.from ||
+        relationship?.from_id;
+
+      const target =
+        relationship?.target ||
+        relationship?.to ||
+        relationship?.to_id;
+
+      const relationshipType =
+        relationship?.relationship ||
+        relationship?.type ||
+        "RELATED_TO";
+
+      if (!source || !target) {
+        return null;
+      }
+
+      return {
+        source,
+        target,
+        relationship: relationshipType,
+        generated: false,
+      };
+    })
+    .filter(Boolean);
+}
+
+/* =========================================================
+   GRAPH PAGE
+========================================================= */
+
 export default function GraphPage() {
+  /* -------------------------------------------------------
+     REFS
+  ------------------------------------------------------- */
+
   const networkRef = useRef(null);
+
+  /* -------------------------------------------------------
+     STATE
+  ------------------------------------------------------- */
 
   const [events, setEvents] = useState([]);
   const [relationships, setRelationships] = useState([]);
 
   const [selectedEvent, setSelectedEvent] = useState(null);
 
+  const [connectionLines, setConnectionLines] = useState([]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState("");
 
-  const [connectionLines, setConnectionLines] = useState([]);
+  const [error, setError] = useState("");
 
   const [zoom, setZoom] = useState(100);
 
-  /*
-   * -------------------------------------------------------
-   * LOAD GRAPH
-   * -------------------------------------------------------
-   */
+  /* =======================================================
+     LOAD GRAPH
+  ======================================================= */
 
   const loadGraph = useCallback(async () => {
     try {
@@ -173,9 +259,17 @@ export default function GraphPage() {
         JSON.stringify(response, null, 2)
       );
 
+      /* ---------------------------------------------------
+         Extract nodes
+      --------------------------------------------------- */
+
       const backendNodes = Array.isArray(response?.nodes)
         ? response.nodes
         : [];
+
+      /* ---------------------------------------------------
+         Extract relationships
+      --------------------------------------------------- */
 
       const backendRelationships = Array.isArray(
         response?.relationships
@@ -183,58 +277,88 @@ export default function GraphPage() {
         ? response.relationships
         : [];
 
-      /*
-       * Sort nodes chronologically.
-       */
-      const sortedEvents = [...backendNodes].sort((a, b) => {
-        const dateA = new Date(a.timestamp).getTime();
-        const dateB = new Date(b.timestamp).getTime();
+      /* ---------------------------------------------------
+         Sort events chronologically
+      --------------------------------------------------- */
 
-        return (
-          (Number.isNaN(dateA) ? 0 : dateA) -
-          (Number.isNaN(dateB) ? 0 : dateB)
+      const sortedEvents = [...backendNodes].sort(
+        (a, b) => {
+          const dateA = new Date(
+            a?.timestamp
+          ).getTime();
+
+          const dateB = new Date(
+            b?.timestamp
+          ).getTime();
+
+          const safeA = Number.isNaN(dateA)
+            ? 0
+            : dateA;
+
+          const safeB = Number.isNaN(dateB)
+            ? 0
+            : dateB;
+
+          return safeA - safeB;
+        }
+      );
+
+      /* ---------------------------------------------------
+         Normalize real Neo4j relationships
+      --------------------------------------------------- */
+
+      const normalizedRelationships =
+        normalizeRelationships(
+          backendRelationships
         );
-      });
 
-      /*
-       * If Neo4j has relationships, use them.
-       *
-       * If there are no relationships yet, create temporal
-       * PRECEDES relationships between consecutive events.
-       *
-       * This keeps the graph useful even before explicit
-       * Neo4j relationships are created.
-       */
-      const validBackendRelationships =
-        backendRelationships
-          .map((relationship) => ({
-            source:
-              relationship.source ||
-              relationship.from ||
-              relationship.from_id,
+      /* ---------------------------------------------------
+         Use real relationships if available.
 
-            target:
-              relationship.target ||
-              relationship.to ||
-              relationship.to_id,
-
-            relationship:
-              relationship.relationship ||
-              "RELATED_TO",
-          }))
-          .filter(
-            (relationship) =>
-              relationship.source &&
-              relationship.target
-          );
+         Otherwise generate temporal links.
+      --------------------------------------------------- */
 
       const finalRelationships =
-        validBackendRelationships.length > 0
-          ? validBackendRelationships
-          : createTemporalRelationships(sortedEvents);
+        normalizedRelationships.length > 0
+          ? normalizedRelationships
+          : createTemporalRelationships(
+              sortedEvents
+            );
+
+      /* ---------------------------------------------------
+         Update state
+      --------------------------------------------------- */
 
       setEvents(sortedEvents);
-      setRelationships(finalRelationships);
+
+      setRelationships(
+        finalRelationships
+      );
+
+      /* ---------------------------------------------------
+         Keep selected event synchronized
+      --------------------------------------------------- */
+
+      setSelectedEvent(
+        (previousSelected) => {
+          if (!previousSelected) {
+            return null;
+          }
+
+          const selectedId =
+            getEventId(
+              previousSelected
+            );
+
+          return (
+            sortedEvents.find(
+              (event) =>
+                getEventId(event) ===
+                selectedId
+            ) || null
+          );
+        }
+      );
 
       console.log(
         "GRAPH NODES:",
@@ -245,23 +369,6 @@ export default function GraphPage() {
         "GRAPH RELATIONSHIPS:",
         finalRelationships
       );
-
-      /*
-       * Keep selected event synchronized with refreshed data.
-       */
-      setSelectedEvent((previousSelected) => {
-        if (!previousSelected) {
-          return null;
-        }
-
-        const selectedId = getEventId(previousSelected);
-
-        return (
-          sortedEvents.find(
-            (event) => getEventId(event) === selectedId
-          ) || null
-        );
-      });
     } catch (err) {
       console.error(
         "Failed to load ChronoGraph:",
@@ -275,48 +382,62 @@ export default function GraphPage() {
 
       setEvents([]);
       setRelationships([]);
+      setConnectionLines([]);
+      setSelectedEvent(null);
     } finally {
       setIsLoading(false);
 
-      /*
-       * Small delay keeps refresh animation visible.
-       */
       setTimeout(() => {
         setIsRefreshing(false);
       }, 250);
     }
   }, []);
 
-  /*
-   * Initial graph load.
-   */
+  /* =======================================================
+     INITIAL LOAD
+  ======================================================= */
 
   useEffect(() => {
     loadGraph();
   }, [loadGraph]);
 
-  /*
-   * -------------------------------------------------------
-   * GRAPH NODE POSITIONS
-   * -------------------------------------------------------
-   */
+  /* =======================================================
+     NODE POSITIONS
+  ======================================================= */
 
   const eventPositions = useMemo(() => {
     return events.map((event, index) => {
-      return (
-        DEFAULT_POSITIONS[index] || {
-          left: `${50 + ((index * 17) % 35) - 17}%`,
-          top: `${25 + ((index * 29) % 50)}%`,
-        }
-      );
+      if (DEFAULT_POSITIONS[index]) {
+        return DEFAULT_POSITIONS[index];
+      }
+
+      /*
+       * Deterministic fallback positions for additional events.
+       */
+
+      const left =
+        15 + ((index * 23) % 70);
+
+      const top =
+        20 + ((index * 31) % 60);
+
+      return {
+        left: `${left}%`,
+        top: `${top}%`,
+      };
     });
   }, [events]);
 
-  /*
-   * -------------------------------------------------------
-   * CALCULATE SVG CONNECTIONS
-   * -------------------------------------------------------
-   */
+  /* =======================================================
+     CALCULATE CONNECTION LINES
+
+     Important:
+     We use offsetLeft / offsetTop instead of
+     getBoundingClientRect().
+
+     This keeps SVG coordinates stable when the
+     complete graph is zoomed.
+  ======================================================= */
 
   const calculateConnections = useCallback(() => {
     const network = networkRef.current;
@@ -326,8 +447,10 @@ export default function GraphPage() {
       return;
     }
 
-    const nodes = network.querySelectorAll(
-      ".graph-node"
+    const nodes = Array.from(
+      network.querySelectorAll(
+        ".graph-node"
+      )
     );
 
     if (!nodes.length) {
@@ -335,87 +458,105 @@ export default function GraphPage() {
       return;
     }
 
-    const networkRect =
-      network.getBoundingClientRect();
+    const positions = nodes.map(
+      (node) => ({
+        x:
+          node.offsetLeft +
+          node.offsetWidth / 2,
 
-    const positions = Array.from(nodes).map(
-      (node) => {
-        const rect =
-          node.getBoundingClientRect();
-
-        return {
-          x:
-            rect.left -
-            networkRect.left +
-            rect.width / 2,
-
-          y:
-            rect.top -
-            networkRect.top +
-            rect.height / 2,
-        };
-      }
+        y:
+          node.offsetTop +
+          node.offsetHeight / 2,
+      })
     );
 
     const lines = relationships
-      .map((relationship, relationshipIndex) => {
-        const sourceId =
-          relationship.source ||
-          relationship.from ||
-          relationship.from_id;
+      .map(
+        (
+          relationship,
+          relationshipIndex
+        ) => {
+          const sourceId =
+            relationship?.source ||
+            relationship?.from ||
+            relationship?.from_id;
 
-        const targetId =
-          relationship.target ||
-          relationship.to ||
-          relationship.to_id;
+          const targetId =
+            relationship?.target ||
+            relationship?.to ||
+            relationship?.to_id;
 
-        const sourceIndex =
-          events.findIndex(
-            (event) =>
-              getEventId(event) === sourceId
-          );
+          if (
+            !sourceId ||
+            !targetId
+          ) {
+            return null;
+          }
 
-        const targetIndex =
-          events.findIndex(
-            (event) =>
-              getEventId(event) === targetId
-          );
+          const sourceIndex =
+            events.findIndex(
+              (event) =>
+                getEventId(event) ===
+                sourceId
+            );
 
-        if (
-          sourceIndex === -1 ||
-          targetIndex === -1 ||
-          !positions[sourceIndex] ||
-          !positions[targetIndex]
-        ) {
-          return null;
+          const targetIndex =
+            events.findIndex(
+              (event) =>
+                getEventId(event) ===
+                targetId
+            );
+
+          if (
+            sourceIndex === -1 ||
+            targetIndex === -1
+          ) {
+            return null;
+          }
+
+          const sourcePosition =
+            positions[sourceIndex];
+
+          const targetPosition =
+            positions[targetIndex];
+
+          if (
+            !sourcePosition ||
+            !targetPosition
+          ) {
+            return null;
+          }
+
+          return {
+            id: `${sourceId}-${targetId}-${relationshipIndex}`,
+
+            x1: sourcePosition.x,
+            y1: sourcePosition.y,
+
+            x2: targetPosition.x,
+            y2: targetPosition.y,
+
+            relationship:
+              relationship?.relationship ||
+              "RELATED_TO",
+
+            generated:
+              relationship?.generated ||
+              false,
+          };
         }
-
-        return {
-          id:
-            `${sourceId}-${targetId}-${relationshipIndex}`,
-
-          x1: positions[sourceIndex].x,
-          y1: positions[sourceIndex].y,
-
-          x2: positions[targetIndex].x,
-          y2: positions[targetIndex].y,
-
-          relationship:
-            relationship.relationship ||
-            "RELATED_TO",
-
-          generated:
-            relationship.generated || false,
-        };
-      })
+      )
       .filter(Boolean);
 
     setConnectionLines(lines);
-  }, [events, relationships]);
+  }, [
+    events,
+    relationships,
+  ]);
 
-  /*
-   * Recalculate graph lines after rendering.
-   */
+  /* =======================================================
+     RECALCULATE CONNECTIONS AFTER RENDER
+  ======================================================= */
 
   useEffect(() => {
     if (!events.length) {
@@ -425,32 +566,48 @@ export default function GraphPage() {
 
     let frameId;
 
-    const update = () => {
+    const updateConnections = () => {
       cancelAnimationFrame(frameId);
 
-      frameId = requestAnimationFrame(() => {
-        calculateConnections();
-      });
+      frameId =
+        requestAnimationFrame(() => {
+          calculateConnections();
+        });
     };
 
-    update();
+    /*
+     * First calculation.
+     */
+
+    updateConnections();
+
+    /*
+     * Recalculate when browser size changes.
+     */
 
     window.addEventListener(
       "resize",
-      update
+      updateConnections
     );
+
+    /*
+     * Recalculate when graph container size changes.
+     */
 
     const network =
       networkRef.current;
 
-    let resizeObserver;
+    let resizeObserver = null;
 
     if (
       network &&
-      typeof ResizeObserver !== "undefined"
+      typeof ResizeObserver !==
+        "undefined"
     ) {
       resizeObserver =
-        new ResizeObserver(update);
+        new ResizeObserver(
+          updateConnections
+        );
 
       resizeObserver.observe(network);
     }
@@ -460,7 +617,7 @@ export default function GraphPage() {
 
       window.removeEventListener(
         "resize",
-        update
+        updateConnections
       );
 
       if (resizeObserver) {
@@ -473,98 +630,182 @@ export default function GraphPage() {
     calculateConnections,
   ]);
 
-  /*
-   * Recalculate after zoom changes.
-   */
+  /* =======================================================
+     RECALCULATE AFTER ZOOM
+  ======================================================= */
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      calculateConnections();
-    }, 100);
+    const timer = setTimeout(
+      () => {
+        calculateConnections();
+      },
+      50
+    );
 
     return () => {
       clearTimeout(timer);
     };
-  }, [zoom, calculateConnections]);
+  }, [
+    zoom,
+    calculateConnections,
+  ]);
 
-  /*
-   * -------------------------------------------------------
-   * ZOOM CONTROLS
-   * -------------------------------------------------------
-   */
+  /* =======================================================
+     ZOOM OUT
+  ======================================================= */
 
   const handleZoomOut = () => {
     setZoom((current) =>
-      Math.max(50, current - 10)
+      Math.max(
+        50,
+        current - 10
+      )
     );
   };
+
+  /* =======================================================
+     ZOOM IN
+  ======================================================= */
 
   const handleZoomIn = () => {
     setZoom((current) =>
-      Math.min(150, current + 10)
+      Math.min(
+        150,
+        current + 10
+      )
     );
   };
 
-  /*
-   * -------------------------------------------------------
-   * SELECT EVENT
-   * -------------------------------------------------------
-   */
+  /* =======================================================
+     RESET ZOOM
+  ======================================================= */
 
-  const handleSelectEvent = (event) => {
+  const handleResetZoom = () => {
+    setZoom(100);
+  };
+
+  /* =======================================================
+     SELECT EVENT
+  ======================================================= */
+
+  const handleSelectEvent = (
+    event
+  ) => {
     setSelectedEvent(event);
   };
 
-  /*
-   * -------------------------------------------------------
-   * RELATED EVENTS COUNT
-   * -------------------------------------------------------
-   */
+  /* =======================================================
+     RELATED EVENTS
 
-  const selectedRelatedEvents = useMemo(() => {
-    if (!selectedEvent) {
-      return [];
-    }
+     Finds both incoming and outgoing
+     relationships.
+  ======================================================= */
 
-    const selectedId =
-      getEventId(selectedEvent);
-
-    const relatedIds = new Set();
-
-    relationships.forEach(
-      (relationship) => {
-        const source =
-          relationship.source;
-
-        const target =
-          relationship.target;
-
-        if (source === selectedId) {
-          relatedIds.add(target);
-        }
-
-        if (target === selectedId) {
-          relatedIds.add(source);
-        }
+  const selectedRelatedEvents =
+    useMemo(() => {
+      if (!selectedEvent) {
+        return [];
       }
-    );
 
-    return events.filter((event) =>
-      relatedIds.has(
-        getEventId(event)
-      )
-    );
-  }, [
-    selectedEvent,
-    relationships,
-    events,
-  ]);
+      const selectedId =
+        getEventId(
+          selectedEvent
+        );
 
-  /*
-   * -------------------------------------------------------
-   * CONFIDENCE
-   * -------------------------------------------------------
-   */
+      if (!selectedId) {
+        return [];
+      }
+
+      const relatedIds =
+        new Set();
+
+      relationships.forEach(
+        (relationship) => {
+          const source =
+            relationship?.source ||
+            relationship?.from ||
+            relationship?.from_id;
+
+          const target =
+            relationship?.target ||
+            relationship?.to ||
+            relationship?.to_id;
+
+          if (
+            source === selectedId
+          ) {
+            relatedIds.add(target);
+          }
+
+          if (
+            target === selectedId
+          ) {
+            relatedIds.add(source);
+          }
+        }
+      );
+
+      return events.filter(
+        (event) =>
+          relatedIds.has(
+            getEventId(event)
+          )
+      );
+    }, [
+      selectedEvent,
+      relationships,
+      events,
+    ]);
+
+  /* =======================================================
+     SELECTED RELATIONSHIPS
+
+     Used to show relationship type
+     in inspector.
+  ======================================================= */
+
+  const selectedRelationships =
+    useMemo(() => {
+      if (!selectedEvent) {
+        return [];
+      }
+
+      const selectedId =
+        getEventId(
+          selectedEvent
+        );
+
+      return relationships.filter(
+        (relationship) => {
+          const source =
+            relationship?.source ||
+            relationship?.from ||
+            relationship?.from_id;
+
+          const target =
+            relationship?.target ||
+            relationship?.to ||
+            relationship?.to_id;
+
+          return (
+            source === selectedId ||
+            target === selectedId
+          );
+        }
+      );
+    }, [
+      selectedEvent,
+      relationships,
+    ]);
+
+  /* =======================================================
+     GRAPH CONFIDENCE
+
+     This is currently a UI-derived metric.
+
+     Later we can replace this with
+     AI-generated confidence from backend.
+  ======================================================= */
 
   const graphConfidence = useMemo(() => {
     if (!events.length) {
@@ -575,30 +816,46 @@ export default function GraphPage() {
       return 50;
     }
 
+    const possibleLinks = Math.max(
+      events.length - 1,
+      1
+    );
+
     const ratio =
       relationships.length /
-      Math.max(events.length - 1, 1);
+      possibleLinks;
 
     return Math.min(
       98,
-      Math.round(70 + ratio * 20)
+      Math.round(
+        70 + ratio * 20
+      )
     );
   }, [
     events.length,
     relationships.length,
   ]);
 
-  /*
-   * -------------------------------------------------------
-   * RENDER
-   * -------------------------------------------------------
-   */
+  /* =======================================================
+     GRAPH STATUS
+  ======================================================= */
+
+  const graphStatusText =
+    isLoading
+      ? "SYNCHRONIZING GRAPH"
+      : error
+      ? "GRAPH ERROR"
+      : "GRAPH SYNCHRONIZED";
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <main className="graph-page">
 
       {/* =================================================
-          HEADER
+          PAGE HEADER
       ================================================= */}
 
       <section className="page-header">
@@ -613,22 +870,25 @@ export default function GraphPage() {
           </h1>
 
           <p className="page-description">
-            Explore how independent events connect
-            across time, systems and evidence.
+            Explore how independent
+            events connect across time,
+            systems and evidence.
           </p>
         </div>
 
         <div className="graph-status">
-          <span className="status-dot" />
+          <span
+            className={`status-dot ${
+              error
+                ? "status-error"
+                : ""
+            }`}
+          />
 
-          {isLoading
-            ? "SYNCHRONIZING GRAPH"
-            : "GRAPH SYNCHRONIZED"}
-
+          {graphStatusText}
         </div>
 
       </section>
-
 
       {/* =================================================
           GRAPH WORKSPACE
@@ -642,7 +902,9 @@ export default function GraphPage() {
 
         <div className="graph-canvas">
 
-          {/* CANVAS HEADER */}
+          {/* =================================================
+              CANVAS HEADER
+          ================================================= */}
 
           <div className="canvas-header">
 
@@ -656,27 +918,43 @@ export default function GraphPage() {
               </h2>
             </div>
 
+            {/* GRAPH CONTROLS */}
 
             <div className="graph-controls">
 
               <button
                 type="button"
-                onClick={handleZoomOut}
-                disabled={zoom <= 50}
+                onClick={
+                  handleZoomOut
+                }
+                disabled={
+                  zoom <= 50
+                }
                 aria-label="Zoom out"
                 title="Zoom out"
               >
                 <ZoomOut size={15} />
               </button>
 
-              <span>
+              <button
+                type="button"
+                className="zoom-value"
+                onClick={
+                  handleResetZoom
+                }
+                title="Reset zoom"
+              >
                 {zoom}%
-              </span>
+              </button>
 
               <button
                 type="button"
-                onClick={handleZoomIn}
-                disabled={zoom >= 150}
+                onClick={
+                  handleZoomIn
+                }
+                disabled={
+                  zoom >= 150
+                }
                 aria-label="Zoom in"
                 title="Zoom in"
               >
@@ -685,8 +963,12 @@ export default function GraphPage() {
 
               <button
                 type="button"
-                onClick={loadGraph}
-                disabled={isRefreshing}
+                onClick={
+                  loadGraph
+                }
+                disabled={
+                  isRefreshing
+                }
                 aria-label="Refresh graph"
                 title="Refresh graph"
               >
@@ -704,7 +986,6 @@ export default function GraphPage() {
 
           </div>
 
-
           {/* =================================================
               NETWORK
           ================================================= */}
@@ -714,10 +995,13 @@ export default function GraphPage() {
             ref={networkRef}
           >
 
-            {/* LOADING */}
+            {/* =================================================
+                GRAPH LOADING
+            ================================================= */}
 
             {isLoading && (
               <div className="graph-loading">
+
                 <RefreshCw
                   size={18}
                   className="refresh-spinning"
@@ -726,46 +1010,59 @@ export default function GraphPage() {
                 <span>
                   Loading evidence graph...
                 </span>
+
               </div>
             )}
 
+            {/* =================================================
+                GRAPH ERROR
+            ================================================= */}
 
-            {/* ERROR */}
+            {!isLoading &&
+              error && (
+                <div className="graph-error">
 
-            {!isLoading && error && (
-              <div className="graph-error">
+                  <AlertTriangle
+                    size={18}
+                  />
 
-                <AlertTriangle size={18} />
+                  <div>
 
-                <div>
-                  <strong>
-                    Unable to load graph
-                  </strong>
+                    <strong>
+                      Unable to load graph
+                    </strong>
 
-                  <span>
-                    {error}
-                  </span>
+                    <span>
+                      {error}
+                    </span>
 
-                  <button
-                    type="button"
-                    onClick={loadGraph}
-                  >
-                    Try again
-                  </button>
+                    <button
+                      type="button"
+                      onClick={
+                        loadGraph
+                      }
+                    >
+                      Try again
+                    </button>
+
+                  </div>
+
                 </div>
+              )}
 
-              </div>
-            )}
-
-
-            {/* EMPTY */}
+            {/* =================================================
+                EMPTY GRAPH
+            ================================================= */}
 
             {!isLoading &&
               !error &&
-              events.length === 0 && (
+              events.length ===
+                0 && (
                 <div className="graph-loading">
 
-                  <ShieldCheck size={20} />
+                  <ShieldCheck
+                    size={20}
+                  />
 
                   <span>
                     No evidence events found.
@@ -774,185 +1071,226 @@ export default function GraphPage() {
                 </div>
               )}
 
-
             {/* =================================================
-                SVG CONNECTIONS
+                GRAPH VISUAL LAYER
+
+                Everything inside this layer is zoomed together.
+                This keeps nodes + lines + AI core aligned.
             ================================================= */}
 
             {!isLoading &&
               events.length > 0 && (
-                <svg
-                  className="graph-connections"
-                  width="100%"
-                  height="100%"
-                  viewBox="0 0 1000 600"
-                  preserveAspectRatio="none"
-                  aria-hidden="true"
+                <div
+                  className="graph-visual-layer"
+                  style={{
+                    position:
+                      "absolute",
+                    inset: 0,
+                    transform: `scale(${
+                      zoom / 100
+                    })`,
+                    transformOrigin:
+                      "center center",
+                    transition:
+                      "transform 180ms ease",
+                  }}
                 >
 
-                  {connectionLines.map(
-                    (line) => (
-                      <line
-                        key={line.id}
-                        x1={
-                          (line.x1 /
-                            Math.max(
-                              networkRef.current
-                                ?.clientWidth ||
-                                1000,
-                              1
-                            )) *
-                          1000
-                        }
-                        y1={
-                          (line.y1 /
-                            Math.max(
-                              networkRef.current
-                                ?.clientHeight ||
-                                600,
-                              1
-                            )) *
-                          600
-                        }
-                        x2={
-                          (line.x2 /
-                            Math.max(
-                              networkRef.current
-                                ?.clientWidth ||
-                                1000,
-                              1
-                            )) *
-                          1000
-                        }
-                        y2={
-                          (line.y2 /
-                            Math.max(
-                              networkRef.current
-                                ?.clientHeight ||
-                                600,
-                              1
-                            )) *
-                          600
-                        }
-                        className="dynamic-connection"
-                      />
-                    )
+                  {/* =================================================
+                      SVG CONNECTIONS
+                  ================================================= */}
+
+                  <svg
+                    className="graph-connections"
+                    width="100%"
+                    height="100%"
+                    viewBox="0 0 1000 600"
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                  >
+
+                    {connectionLines.map(
+                      (line) => (
+                        <line
+                          key={line.id}
+                          x1={
+                            (line.x1 /
+                              Math.max(
+                                networkRef
+                                  .current
+                                  ?.clientWidth ||
+                                  1,
+                                1
+                              )) *
+                            1000
+                          }
+                          y1={
+                            (line.y1 /
+                              Math.max(
+                                networkRef
+                                  .current
+                                  ?.clientHeight ||
+                                  1,
+                                1
+                              )) *
+                            600
+                          }
+                          x2={
+                            (line.x2 /
+                              Math.max(
+                                networkRef
+                                  .current
+                                  ?.clientWidth ||
+                                  1,
+                                1
+                              )) *
+                            1000
+                          }
+                          y2={
+                            (line.y2 /
+                              Math.max(
+                                networkRef
+                                  .current
+                                  ?.clientHeight ||
+                                  1,
+                                1
+                              )) *
+                            600
+                          }
+                          className={`dynamic-connection ${
+                            line.generated
+                              ? "generated-connection"
+                              : ""
+                          }`}
+                        />
+                      )
+                    )}
+
+                  </svg>
+
+                  {/* =================================================
+                      EVENTS
+                  ================================================= */}
+
+                  {events.map(
+                    (
+                      event,
+                      index
+                    ) => {
+                      const Icon =
+                        getSourceIcon(
+                          event?.source
+                        );
+
+                      const eventId =
+                        getEventId(
+                          event
+                        );
+
+                      const position =
+                        eventPositions[
+                          index
+                        ] || {
+                          left: "50%",
+                          top: "50%",
+                        };
+
+                      const isSelected =
+                        selectedEvent &&
+                        getEventId(
+                          selectedEvent
+                        ) === eventId;
+
+                      return (
+                        <button
+                          type="button"
+                          key={
+                            eventId ||
+                            `event-${index}`
+                          }
+                          className={`graph-node ${
+                            isSelected
+                              ? "selected"
+                              : ""
+                          }`}
+                          style={{
+                            left:
+                              position.left,
+                            top:
+                              position.top,
+                            transform:
+                              "translate(-50%, -50%)",
+                          }}
+                          onClick={() =>
+                            handleSelectEvent(
+                              event
+                            )
+                          }
+                        >
+
+                          {/* NODE ICON */}
+
+                          <div className="node-icon">
+
+                            <Icon
+                              size={17}
+                            />
+
+                          </div>
+
+                          {/* NODE CONTENT */}
+
+                          <div className="node-content">
+
+                            <span>
+                              {event?.source ||
+                                "System"}
+                            </span>
+
+                            <strong>
+                              {event?.title ||
+                                event?.name ||
+                                "Unknown Event"}
+                            </strong>
+
+                            <small>
+                              {eventId ||
+                                "NO-ID"}
+                            </small>
+
+                            <small className="node-time">
+                              {formatTime(
+                                event?.timestamp
+                              )}
+                            </small>
+
+                          </div>
+
+                        </button>
+                      );
+                    }
                   )}
 
-                </svg>
-              )}
+                  {/* =================================================
+                      CENTER AI CORE
+                  ================================================= */}
 
+                  <div className="graph-core">
 
-            {/* =================================================
-                EVENTS
-            ================================================= */}
+                    <div className="core-ring ring-one" />
 
-            {!isLoading &&
-              events.map(
-                (event, index) => {
+                    <div className="core-ring ring-two" />
 
-                  const Icon =
-                    getSourceIcon(
-                      event.source
-                    );
+                    <div className="core-symbol">
+                      ◈
+                    </div>
 
-                  const eventId =
-                    getEventId(event);
-
-                  const position =
-                    eventPositions[index];
-
-                  const isSelected =
-                    selectedEvent &&
-                    getEventId(
-                      selectedEvent
-                    ) === eventId;
-
-                  return (
-                    <button
-                      type="button"
-                      key={
-                        eventId ||
-                        `event-${index}`
-                      }
-                      className={`graph-node ${
-                        isSelected
-                          ? "selected"
-                          : ""
-                      }`}
-                      style={{
-                        left:
-                          position.left,
-                        top:
-                          position.top,
-                        transform: `translate(-50%, -50%) scale(${
-                          zoom / 100
-                        })`,
-                      }}
-                      onClick={() =>
-                        handleSelectEvent(
-                          event
-                        )
-                      }
-                    >
-
-                      <div className="node-icon">
-                        <Icon size={17} />
-                      </div>
-
-                      <div className="node-content">
-
-                        <span>
-                          {event.source ||
-                            "System"}
-                        </span>
-
-                        <strong>
-                          {event.title ||
-                            event.name ||
-                            "Unknown Event"}
-                        </strong>
-
-                        <small>
-                          {eventId ||
-                            "NO-ID"}
-                        </small>
-
-                        <small className="node-time">
-                          {formatTime(
-                            event.timestamp
-                          )}
-                        </small>
-
-                      </div>
-
-                    </button>
-                  );
-                }
-              )}
-
-
-            {/* =================================================
-                CENTER AI CORE
-            ================================================= */}
-
-            {!isLoading &&
-              events.length > 0 && (
-                <div className="graph-core">
-
-                  <div className="core-ring ring-one" />
-
-                  <div className="core-ring ring-two" />
-
-                  <div className="core-symbol">
-                    ◈
                   </div>
 
                 </div>
               )}
 
           </div>
-
 
           {/* =================================================
               LEGEND
@@ -979,16 +1317,19 @@ export default function GraphPage() {
 
         </div>
 
-
         {/* =================================================
             SIDE INSPECTOR
         ================================================= */}
 
         <aside className="graph-inspector">
 
-          {selectedEvent ? (
+          {/* =================================================
+              SELECTED EVENT
+          ================================================= */}
 
+          {selectedEvent ? (
             <>
+
               {/* INSPECTOR HEADER */}
 
               <div className="inspector-top">
@@ -1006,14 +1347,16 @@ export default function GraphPage() {
                     )
                   }
                   aria-label="Close event details"
+                  title="Close"
                 >
                   <X size={16} />
                 </button>
 
               </div>
 
-
-              {/* SOURCE */}
+              {/* =================================================
+                  SOURCE
+              ================================================= */}
 
               <div className="selected-source">
 
@@ -1022,7 +1365,7 @@ export default function GraphPage() {
                   {(() => {
                     const Icon =
                       getSourceIcon(
-                        selectedEvent.source
+                        selectedEvent?.source
                       );
 
                     return (
@@ -1035,41 +1378,47 @@ export default function GraphPage() {
                 <div>
 
                   <span>
-                    {selectedEvent.source ||
+                    {selectedEvent?.source ||
                       "System"}
                   </span>
 
                   <strong>
                     {getEventId(
                       selectedEvent
-                    ) || "NO-ID"}
+                    ) ||
+                      "NO-ID"}
                   </strong>
 
                 </div>
 
               </div>
 
-
-              {/* TITLE */}
+              {/* =================================================
+                  TITLE
+              ================================================= */}
 
               <h2>
-                {selectedEvent.title ||
-                  selectedEvent.name ||
+                {selectedEvent?.title ||
+                  selectedEvent?.name ||
                   "Unknown Event"}
               </h2>
 
-
-              {/* DESCRIPTION */}
+              {/* =================================================
+                  DESCRIPTION
+              ================================================= */}
 
               <p className="inspector-description">
-                {selectedEvent.description ||
+                {selectedEvent?.description ||
                   "No description is available for this evidence event."}
               </p>
 
-
-              {/* EVENT DATA */}
+              {/* =================================================
+                  EVENT DATA
+              ================================================= */}
 
               <div className="inspector-data">
+
+                {/* TIMESTAMP */}
 
                 <div>
 
@@ -1080,12 +1429,13 @@ export default function GraphPage() {
 
                   <strong>
                     {formatDateTime(
-                      selectedEvent.timestamp
+                      selectedEvent?.timestamp
                     )}
                   </strong>
 
                 </div>
 
+                {/* EVENT TYPE */}
 
                 <div>
 
@@ -1095,13 +1445,14 @@ export default function GraphPage() {
                   </span>
 
                   <strong>
-                    {selectedEvent.event_type ||
-                      selectedEvent.type ||
+                    {selectedEvent?.event_type ||
+                      selectedEvent?.type ||
                       "Evidence Event"}
                   </strong>
 
                 </div>
 
+                {/* RELATED EVENTS */}
 
                 <div>
 
@@ -1120,8 +1471,9 @@ export default function GraphPage() {
 
               </div>
 
-
-              {/* RELEVANCE */}
+              {/* =================================================
+                  RELEVANCE
+              ================================================= */}
 
               <div className="evidence-confidence">
 
@@ -1149,12 +1501,54 @@ export default function GraphPage() {
 
               </div>
 
+              {/* =================================================
+                  RELATIONSHIP DETAILS
+              ================================================= */}
 
-              {/* RELATIONSHIP INFORMATION */}
+              {selectedRelationships.length >
+                0 && (
+                <div className="selected-relationships">
+
+                  <span className="eyebrow">
+                    RELATIONSHIPS
+                  </span>
+
+                  <div className="relationship-type-list">
+
+                    {selectedRelationships
+                      .slice(0, 5)
+                      .map(
+                        (
+                          relationship,
+                          index
+                        ) => (
+                          <div
+                            key={`${relationship.source}-${relationship.target}-${index}`}
+                            className="relationship-type"
+                          >
+                            <GitBranch
+                              size={14}
+                            />
+
+                            <span>
+                              {relationship.relationship ||
+                                "RELATED_TO"}
+                            </span>
+                          </div>
+                        )
+                      )}
+
+                  </div>
+
+                </div>
+              )}
+
+              {/* =================================================
+                  CONNECTED EVIDENCE
+              ================================================= */}
 
               {selectedRelatedEvents.length >
                 0 && (
-
                 <div className="selected-relationships">
 
                   <span className="eyebrow">
@@ -1164,61 +1558,69 @@ export default function GraphPage() {
                   <div className="related-event-list">
 
                     {selectedRelatedEvents
-                      .slice(0, 4)
-                      .map((relatedEvent) => {
+                      .slice(0, 5)
+                      .map(
+                        (
+                          relatedEvent
+                        ) => {
+                          const RelatedIcon =
+                            getSourceIcon(
+                              relatedEvent?.source
+                            );
 
-                        const RelatedIcon =
-                          getSourceIcon(
-                            relatedEvent.source
-                          );
+                          return (
+                            <button
+                              type="button"
+                              key={
+                                getEventId(
+                                  relatedEvent
+                                )
+                              }
+                              onClick={() =>
+                                handleSelectEvent(
+                                  relatedEvent
+                                )
+                              }
+                              className="related-event"
+                            >
 
-                        return (
-                          <button
-                            type="button"
-                            key={
-                              getEventId(
-                                relatedEvent
-                              )
-                            }
-                            onClick={() =>
-                              handleSelectEvent(
-                                relatedEvent
-                              )
-                            }
-                            className="related-event"
-                          >
+                              <div>
+                                <RelatedIcon
+                                  size={15}
+                                />
+                              </div>
 
-                            <div>
-                              <RelatedIcon
-                                size={15}
+                              <span>
+                                {relatedEvent?.title ||
+                                  relatedEvent?.name ||
+                                  "Unknown Event"}
+                              </span>
+
+                              <ArrowRight
+                                size={14}
                               />
-                            </div>
 
-                            <span>
-                              {relatedEvent.title ||
-                                relatedEvent.name ||
-                                "Unknown Event"}
-                            </span>
-
-                            <ArrowRight
-                              size={14}
-                            />
-
-                          </button>
-                        );
-                      })}
+                            </button>
+                          );
+                        }
+                      )}
 
                   </div>
 
                 </div>
               )}
 
-
-              {/* TRACE BUTTON */}
+              {/* =================================================
+                  TRACE BUTTON
+              ================================================= */}
 
               <button
                 type="button"
                 className="trace-button"
+                disabled={
+                  selectedRelatedEvents.length ===
+                  0
+                }
                 onClick={() => {
                   if (
                     selectedRelatedEvents.length >
@@ -1230,28 +1632,31 @@ export default function GraphPage() {
                   }
                 }}
               >
+
                 Trace related events
 
-                <ArrowRight size={15} />
+                <ArrowRight
+                  size={15}
+                />
 
               </button>
 
             </>
-
           ) : (
 
+            /* =================================================
+               DEFAULT INSPECTOR
+            ================================================= */
+
             <>
-              {/* DEFAULT INSPECTOR */}
 
               <span className="eyebrow">
                 GRAPH INTELLIGENCE
               </span>
 
-
               <div className="inspector-symbol">
                 ◇
               </div>
-
 
               <h2>
                 Select an
@@ -1259,16 +1664,17 @@ export default function GraphPage() {
                 evidence node.
               </h2>
 
-
               <p>
-                Select an event to inspect its
-                source, timestamp, relevance and
-                relationship to the wider incident
+                Select an event to inspect
+                its source, timestamp,
+                relevance and relationship
+                to the wider incident
                 sequence.
               </p>
 
-
-              {/* SUMMARY */}
+              {/* =================================================
+                  SUMMARY
+              ================================================= */}
 
               <div className="graph-summary">
 
@@ -1284,7 +1690,6 @@ export default function GraphPage() {
 
                 </div>
 
-
                 <div>
 
                   <strong>
@@ -1296,7 +1701,6 @@ export default function GraphPage() {
                   </span>
 
                 </div>
-
 
                 <div>
 
@@ -1312,21 +1716,37 @@ export default function GraphPage() {
 
               </div>
 
+              {/* =================================================
+                  GRAPH CONNECTION STATUS
+              ================================================= */}
 
-              {/* GRAPH CONNECTION STATUS */}
+              <div
+                className={`graph-inspector-status ${
+                  error
+                    ? "graph-status-error"
+                    : ""
+                }`}
+              >
 
-              <div className="graph-inspector-status">
-
-                <ShieldCheck size={16} />
+                {error ? (
+                  <AlertTriangle
+                    size={16}
+                  />
+                ) : (
+                  <ShieldCheck
+                    size={16}
+                  />
+                )}
 
                 <span>
-                  Neo4j graph connected
+                  {error
+                    ? "Neo4j graph unavailable"
+                    : "Neo4j graph connected"}
                 </span>
 
               </div>
 
             </>
-
           )}
 
         </aside>
