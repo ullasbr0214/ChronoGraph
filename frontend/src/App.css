@@ -5619,3 +5619,103 @@
   z-index: 3;
   pointer-events: none;
 }
+
+.graph-node {
+  transform: translate(-50%, -50%);
+  max-width: 250px;
+}
+
+.graph-connections {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.graph-node {
+  z-index: 5;
+}
+
+.graph-core {
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* =========================================
+   TRACE RELATED EVENTS
+========================================= */
+
+.graph-node {
+  transition:
+    opacity 0.25s ease,
+    filter 0.25s ease,
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+
+/* Traced node */
+
+.graph-node.traced {
+  border-color: rgba(56, 189, 248, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.25),
+    0 0 25px rgba(56, 189, 248, 0.18);
+}
+
+
+/* Selected node */
+
+.graph-node.selected {
+  border-color: rgba(56, 189, 248, 1);
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.35),
+    0 0 30px rgba(56, 189, 248, 0.25);
+}
+
+
+/* Unrelated nodes */
+
+.graph-node.dimmed {
+  opacity: 0.25;
+  filter: grayscale(0.5);
+}
+
+
+/* Normal connection */
+
+.dynamic-connection {
+  stroke: rgba(56, 189, 248, 0.45);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-dasharray: 6 6;
+  fill: none;
+
+  transition:
+    opacity 0.25s ease,
+    stroke-width 0.25s ease,
+    filter 0.25s ease;
+}
+
+
+/* Traced connection */
+
+.dynamic-connection.traced-connection {
+  stroke: rgba(56, 189, 248, 0.95);
+  stroke-width: 2.2;
+  stroke-dasharray: 8 5;
+
+  filter:
+    drop-shadow(
+      0 0 5px
+      rgba(56, 189, 248, 0.65)
+    );
+}
+
+
+/* Unrelated connection */
+
+.dynamic-connection.dimmed-connection {
+  opacity: 0.08;
+}

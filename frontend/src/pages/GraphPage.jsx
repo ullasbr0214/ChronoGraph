@@ -30,6 +30,7 @@ export default function GraphPage() {
   const [events, setEvents] = useState([]);
   const [relationships, setRelationships] = useState([]);
   const [connectionLines, setConnectionLines] = useState([]);
+const [tracedEventIds, setTracedEventIds] = useState([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -236,16 +237,19 @@ export default function GraphPage() {
           }
 
           return {
-            id:
-              relationship.id ||
-              `${relationship.source}-${relationship.target}`,
+  id:
+    relationship.id ||
+    `${relationship.source}-${relationship.target}`,
 
-            x1: sourcePosition.x,
-            y1: sourcePosition.y,
+  source: relationship.source,
+  target: relationship.target,
 
-            x2: targetPosition.x,
-            y2: targetPosition.y,
-          };
+  x1: sourcePosition.x,
+  y1: sourcePosition.y,
+
+  x2: targetPosition.x,
+  y2: targetPosition.y,
+};
         })
         .filter(Boolean);
 
@@ -297,31 +301,23 @@ export default function GraphPage() {
   // ---------------------------------------
 
   const nodePositions = [
-    {
-      left: "15%",
-      top: "25%",
-    },
-    {
-      left: "39%",
-      top: "60%",
-    },
-    {
-      left: "65%",
-      top: "35%",
-    },
-    {
-      left: "82%",
-      top: "65%",
-    },
-    {
-      left: "25%",
-      top: "75%",
-    },
-    {
-      left: "75%",
-      top: "20%",
-    },
-  ];
+  {
+    left: "18%",
+    top: "22%",
+  },
+  {
+    left: "42%",
+    top: "58%",
+  },
+  {
+    left: "64%",
+    top: "32%",
+  },
+  {
+    left: "72%",
+    top: "68%",
+  },
+];
 
   // ---------------------------------------
   // FORMAT TIME
@@ -346,12 +342,54 @@ export default function GraphPage() {
   };
 
   // ---------------------------------------
-  // SELECT EVENT
-  // ---------------------------------------
+// SELECT EVENT
+// ---------------------------------------
 
-  const handleSelectEvent = (event) => {
-    setSelectedEvent(event);
-  };
+const handleSelectEvent = (event) => {
+  setSelectedEvent(event);
+};
+
+
+// ---------------------------------------
+// TRACE RELATED EVENTS
+// ---------------------------------------
+
+const handleTraceRelatedEvents = () => {
+  if (!selectedEvent) return;
+
+  const selectedId =
+    selectedEvent.id ||
+    selectedEvent.event_id;
+
+  if (!selectedId) return;
+
+  const relatedIds = new Set();
+
+  relatedIds.add(selectedId);
+
+  relationships.forEach((relationship) => {
+    if (relationship.source === selectedId) {
+      relatedIds.add(relationship.target);
+    }
+
+    if (relationship.target === selectedId) {
+      relatedIds.add(relationship.source);
+    }
+  });
+
+  setTracedEventIds(
+    Array.from(relatedIds)
+  );
+};
+
+
+// ---------------------------------------
+// CLEAR TRACE
+// ---------------------------------------
+
+const clearTrace = () => {
+  setTracedEventIds([]);
+};
 
   // ---------------------------------------
   // RENDER
@@ -515,17 +553,42 @@ export default function GraphPage() {
 
 
                   {connectionLines.map(
-                    (line) => (
-                      <line
-                        key={line.id}
-                        x1={line.x1}
-                        y1={line.y1}
-                        x2={line.x2}
-                        y2={line.y2}
-                        className="dynamic-connection"
-                      />
-                    )
-                  )}
+  (line) => {
+    const isLineTraced =
+      tracedEventIds.includes(
+        line.source
+      ) &&
+      tracedEventIds.includes(
+        line.target
+      );
+
+    const isTraceActive =
+      tracedEventIds.length > 0;
+
+    return (
+      <line
+        key={line.id}
+        x1={line.x1}
+        y1={line.y1}
+        x2={line.x2}
+        y2={line.y2}
+        className={`dynamic-connection
+          ${
+            isLineTraced
+              ? "traced-connection"
+              : ""
+          }
+          ${
+            isTraceActive &&
+            !isLineTraced
+              ? "dimmed-connection"
+              : ""
+          }
+        `}
+      />
+    );
+  }
+)}
 
                 </svg>
 
@@ -562,10 +625,16 @@ export default function GraphPage() {
                     selectedEvent?.event_id;
 
                   const isSelected =
-                    selectedId === eventId;
+  selectedId === eventId;
 
-                  return (
-                    <button
+const isTraced =
+  tracedEventIds.includes(eventId);
+
+const isTraceActive =
+  tracedEventIds.length > 0;
+
+return (
+  <button
                       key={eventId}
                       ref={(element) => {
                         nodeRefs.current[
@@ -573,11 +642,15 @@ export default function GraphPage() {
                         ] = element;
                       }}
                       type="button"
-                      className={`graph-node ${
-                        isSelected
-                          ? "selected"
-                          : ""
-                      }`}
+                      className={`graph-node
+  ${isSelected ? "selected" : ""}
+  ${isTraced ? "traced" : ""}
+  ${
+    isTraceActive && !isTraced
+      ? "dimmed"
+      : ""
+  }
+`}
                       style={{
                         left: position.left,
                         top: position.top,
@@ -836,24 +909,31 @@ export default function GraphPage() {
 
               {/* TRACE */}
 
-              <button
-                type="button"
-                className="trace-button"
-                onClick={() => {
-                  console.log(
-                    "Tracing event:",
-                    selectedEvent
-                  );
-                }}
-              >
+              {tracedEventIds.length > 0 ? (
 
-                Trace related events
+  <button
+    type="button"
+    className="trace-button"
+    onClick={clearTrace}
+  >
+    Clear trace
 
-                <ArrowRight
-                  size={15}
-                />
+    <X size={15} />
+  </button>
 
-              </button>
+) : (
+
+  <button
+    type="button"
+    className="trace-button"
+    onClick={handleTraceRelatedEvents}
+  >
+    Trace related events
+
+    <ArrowRight size={15} />
+  </button>
+
+)}
 
             </>
 
