@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   GitBranch,
   MessageSquare,
@@ -9,7 +9,7 @@ import {
   X
 } from "lucide-react";
 
-import { events } from "../data/events";
+import { getGraph } from "../services/api";
 
 const sourceIcons = {
   Slack: MessageSquare,
@@ -19,6 +19,33 @@ const sourceIcons = {
 
 export default function GraphPage() {
   const [selectedEvent, setSelectedEvent] = useState(null);
+const [events, setEvents] = useState([]);
+const [relationships, setRelationships] = useState([]);
+const [isLoading, setIsLoading] = useState(true);
+const [error, setError] = useState("");
+
+useEffect(() => {
+  async function loadGraph() {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const response = await getGraph();
+
+      console.log("Graph response:", response);
+
+      setEvents(response.nodes || []);
+      setRelationships(response.relationships || []);
+    } catch (error) {
+      console.error("Failed to load graph:", error);
+      setError(error.message || "Failed to load graph");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  loadGraph();
+}, []);
 
   return (
     <main className="graph-page">
@@ -83,6 +110,18 @@ export default function GraphPage() {
 
           <div className="network">
 
+            {isLoading && (
+  <div className="graph-loading">
+    Loading evidence graph...
+  </div>
+)}
+
+{error && (
+  <div className="graph-error">
+    {error}
+  </div>
+)}
+
             {/* connection lines */}
 
             <div className="connection connection-one" />
@@ -106,44 +145,39 @@ export default function GraphPage() {
             {/* EVENTS */}
 
             {events.map((event, index) => {
+  const Icon =
+    sourceIcons[event.source] || GitBranch;
 
-              const Icon =
-                sourceIcons[event.source] || GitBranch;
+  return (
+    <button
+      key={event.event_id || event.id || index}
+      className={`graph-node node-${index + 1} ${
+        selectedEvent?.event_id === event.event_id
+          ? "selected"
+          : ""
+      }`}
+      onClick={() => setSelectedEvent(event)}
+    >
+      <div className="node-icon">
+        <Icon size={17} />
+      </div>
 
-              return (
-                <button
-                  key={event.event_id}
-                  className={`graph-node node-${index + 1} ${
-                    selectedEvent?.event_id === event.event_id
-                      ? "selected"
-                      : ""
-                  }`}
-                  onClick={() => setSelectedEvent(event)}
-                >
+      <div className="node-content">
+        <span>
+          {event.source || "System"}
+        </span>
 
-                  <div className="node-icon">
-                    <Icon size={17} />
-                  </div>
+        <strong>
+          {event.title || event.name || "Unknown Event"}
+        </strong>
 
-                  <div className="node-content">
-
-                    <span>
-                      {event.source}
-                    </span>
-
-                    <strong>
-                      {event.title}
-                    </strong>
-
-                    <small>
-                      {event.event_id}
-                    </small>
-
-                  </div>
-
-                </button>
-              );
-            })}
+        <small>
+          {event.event_id || event.id}
+        </small>
+      </div>
+    </button>
+  );
+})}
 
 
             {/* CENTER SIGNAL */}
@@ -324,12 +358,12 @@ export default function GraphPage() {
               <div className="graph-summary">
 
                 <div>
-                  <strong>03</strong>
-                  <span>EVENTS</span>
+                  <strong>{events.length}</strong>
+<span>EVENTS</span>
                 </div>
 
                 <div>
-                  <strong>02</strong>
+                  <strong>{relationships.length}</strong>
                   <span>LINKS</span>
                 </div>
 

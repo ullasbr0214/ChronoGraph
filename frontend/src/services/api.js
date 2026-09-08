@@ -56,3 +56,16 @@ export async function getEvents() {
 
   return response.json();
 }
+
+export async function getGraph() {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/graph`
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to fetch graph");
+  }
+
+  return response.json();
+}
