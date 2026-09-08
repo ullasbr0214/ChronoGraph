@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+
 import {
   GitBranch,
   MessageSquare,
@@ -15,6 +16,7 @@ const sourceIcons = {
   Slack: MessageSquare,
   GitHub: GitBranch,
   Email: Mail,
+
   "System Log": ShieldCheck,
   "Security Log": ShieldCheck,
   "Network Log": GitBranch,
@@ -22,33 +24,26 @@ const sourceIcons = {
 };
 
 export default function GraphPage() {
-  // ---------------------------------------
-  // STATE
-  // ---------------------------------------
-
   const [selectedEvent, setSelectedEvent] = useState(null);
+
   const [events, setEvents] = useState([]);
   const [relationships, setRelationships] = useState([]);
-  const [connectionLines, setConnectionLines] = useState([]);
-const [tracedEventIds, setTracedEventIds] = useState([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // ---------------------------------------
-  // REFS
-  // ---------------------------------------
+  const [connectionLines, setConnectionLines] = useState([]);
 
+  // Reference to graph area
   const networkRef = useRef(null);
-  const nodeRefs = useRef([]);
 
-  // ---------------------------------------
-  // LOAD EVENTS FROM BACKEND
-  // ---------------------------------------
+  /*
+   * ============================================================
+   * LOAD GRAPH DATA
+   * ============================================================
+   */
 
   useEffect(() => {
-    let mounted = true;
-
     async function loadGraph() {
       try {
         setIsLoading(true);
@@ -62,64 +57,59 @@ const [tracedEventIds, setTracedEventIds] = useState([]);
         );
 
         /*
-          Backend can return:
-
-          {
-            success: true,
-            count: 4,
-            events: [...]
-          }
-
-          OR:
-
-          [...]
-        */
+         * Backend can return:
+         *
+         * {
+         *   success: true,
+         *   count: 4,
+         *   events: [...]
+         * }
+         *
+         * OR:
+         *
+         * [...]
+         */
 
         const backendEvents = Array.isArray(response)
           ? response
           : response?.events || [];
 
-        // Sort events chronologically
+        /*
+         * Sort events according to timestamp
+         */
+
         const sortedEvents = [...backendEvents].sort(
           (a, b) =>
-            new Date(a.timestamp || 0) -
-            new Date(b.timestamp || 0)
+            new Date(a.timestamp) -
+            new Date(b.timestamp)
         );
-
-        if (!mounted) return;
 
         setEvents(sortedEvents);
 
-        // ---------------------------------------
-        // CREATE TEMPORAL RELATIONSHIPS
-        // ---------------------------------------
+        /*
+         * Create temporal relationships
+         *
+         * EVT-001 → EVT-002
+         * EVT-002 → EVT-003
+         * EVT-003 → EVT-004
+         */
 
-        const generatedRelationships = sortedEvents
-          .slice(0, -1)
-          .map((event, index) => {
-            const sourceId =
-              event.id || event.event_id;
+        const generatedRelationships =
+          sortedEvents
+            .slice(0, -1)
+            .map((event, index) => ({
+              source:
+                event.id ||
+                event.event_id,
 
-            const targetEvent =
-              sortedEvents[index + 1];
+              target:
+                sortedEvents[index + 1].id ||
+                sortedEvents[index + 1].event_id,
+            }));
 
-            const targetId =
-              targetEvent?.id ||
-              targetEvent?.event_id;
-
-            return {
-              id: `${sourceId}-${targetId}`,
-              source: sourceId,
-              target: targetId,
-            };
-          })
-          .filter(
-            (relationship) =>
-              relationship.source &&
-              relationship.target
-          );
-
-        setRelationships(generatedRelationships);
+        setRelationships(
+          generatedRelationships
+        );
 
         console.log(
           "GRAPH EVENTS:",
@@ -130,157 +120,165 @@ const [tracedEventIds, setTracedEventIds] = useState([]);
           "GRAPH RELATIONSHIPS:",
           generatedRelationships
         );
-      } catch (err) {
+      } catch (error) {
         console.error(
           "Failed to load graph:",
-          err
+          error
         );
 
-        if (!mounted) return;
-
         setError(
-          err?.message ||
+          error?.message ||
             "Failed to load graph data"
         );
       } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     }
 
     loadGraph();
-
-    return () => {
-      mounted = false;
-    };
   }, []);
 
-  // ---------------------------------------
-  // CALCULATE SVG CONNECTION LINES
-  // ---------------------------------------
+  /*
+   * ============================================================
+   * CALCULATE CONNECTION LINES
+   * ============================================================
+   */
 
   useEffect(() => {
-    if (!events.length || !relationships.length) {
+    if (
+      !events.length ||
+      !relationships.length
+    ) {
       setConnectionLines([]);
       return;
     }
 
     const calculateConnections = () => {
-      const network = networkRef.current;
+      const network =
+        networkRef.current;
 
       if (!network) return;
+
+      const nodes =
+        network.querySelectorAll(
+          ".graph-node"
+        );
+
+      if (!nodes.length) return;
 
       const networkRect =
         network.getBoundingClientRect();
 
-      const positions = events.map(
-        (_, index) => {
-          const node =
-            nodeRefs.current[index];
+      const positions =
+        Array.from(nodes).map(
+          (node) => {
+            const rect =
+              node.getBoundingClientRect();
 
-          if (!node) return null;
+            return {
+              x:
+                rect.left -
+                networkRect.left +
+                rect.width / 2,
 
-          const rect =
-            node.getBoundingClientRect();
-
-          return {
-            x:
-              rect.left -
-              networkRect.left +
-              rect.width / 2,
-
-            y:
-              rect.top -
-              networkRect.top +
-              rect.height / 2,
-          };
-        }
-      );
-
-      const lines = relationships
-        .map((relationship) => {
-          const sourceIndex =
-            events.findIndex(
-              (event) =>
-                (event.id ||
-                  event.event_id) ===
-                relationship.source
-            );
-
-          const targetIndex =
-            events.findIndex(
-              (event) =>
-                (event.id ||
-                  event.event_id) ===
-                relationship.target
-            );
-
-          if (
-            sourceIndex === -1 ||
-            targetIndex === -1
-          ) {
-            return null;
+              y:
+                rect.top -
+                networkRect.top +
+                rect.height / 2,
+            };
           }
+        );
 
-          const sourcePosition =
-            positions[sourceIndex];
+      const lines =
+        relationships
+          .map(
+            (
+              relationship
+            ) => {
+              const sourceIndex =
+                events.findIndex(
+                  (event) =>
+                    (event.id ||
+                      event.event_id) ===
+                    relationship.source
+                );
 
-          const targetPosition =
-            positions[targetIndex];
+              const targetIndex =
+                events.findIndex(
+                  (event) =>
+                    (event.id ||
+                      event.event_id) ===
+                    relationship.target
+                );
 
-          if (
-            !sourcePosition ||
-            !targetPosition
-          ) {
-            return null;
-          }
+              if (
+                sourceIndex === -1 ||
+                targetIndex === -1
+              ) {
+                return null;
+              }
 
-          return {
-  id:
-    relationship.id ||
-    `${relationship.source}-${relationship.target}`,
+              if (
+                !positions[
+                  sourceIndex
+                ] ||
+                !positions[
+                  targetIndex
+                ]
+              ) {
+                return null;
+              }
 
-  source: relationship.source,
-  target: relationship.target,
+              return {
+                id:
+                  `${relationship.source}-` +
+                  `${relationship.target}`,
 
-  x1: sourcePosition.x,
-  y1: sourcePosition.y,
+                x1:
+                  positions[
+                    sourceIndex
+                  ].x,
 
-  x2: targetPosition.x,
-  y2: targetPosition.y,
-};
-        })
-        .filter(Boolean);
+                y1:
+                  positions[
+                    sourceIndex
+                  ].y,
+
+                x2:
+                  positions[
+                    targetIndex
+                  ].x,
+
+                y2:
+                  positions[
+                    targetIndex
+                  ].y,
+              };
+            }
+          )
+          .filter(Boolean);
 
       setConnectionLines(lines);
     };
 
-    // Give React time to finish rendering nodes
-    const timer = setTimeout(
-      calculateConnections,
-      50
-    );
+    /*
+     * Wait until React finishes rendering
+     */
 
-    // Recalculate when window changes size
+    const timer =
+      setTimeout(
+        calculateConnections,
+        100
+      );
+
+    /*
+     * Recalculate on browser resize
+     */
+
     window.addEventListener(
       "resize",
       calculateConnections
     );
-
-    // Recalculate when graph container changes
-    let resizeObserver;
-
-    if (networkRef.current) {
-      resizeObserver =
-        new ResizeObserver(
-          calculateConnections
-        );
-
-      resizeObserver.observe(
-        networkRef.current
-      );
-    }
 
     return () => {
       clearTimeout(timer);
@@ -289,118 +287,77 @@ const [tracedEventIds, setTracedEventIds] = useState([]);
         "resize",
         calculateConnections
       );
-
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
     };
-  }, [events, relationships]);
+  }, [
+    events,
+    relationships,
+  ]);
 
-  // ---------------------------------------
-  // GRAPH NODE POSITIONS
-  // ---------------------------------------
+  /*
+   * ============================================================
+   * EVENT ICON
+   * ============================================================
+   */
 
-  const nodePositions = [
-  {
-    left: "18%",
-    top: "22%",
-  },
-  {
-    left: "42%",
-    top: "58%",
-  },
-  {
-    left: "64%",
-    top: "32%",
-  },
-  {
-    left: "72%",
-    top: "68%",
-  },
-];
-
-  // ---------------------------------------
-  // FORMAT TIME
-  // ---------------------------------------
-
-  const formatTime = (timestamp) => {
-    if (!timestamp) {
-      return "--:--";
-    }
-
-    const date = new Date(timestamp);
-
-    if (Number.isNaN(date.getTime())) {
-      return "--:--";
-    }
-
-    return date.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+  const getEventIcon = (
+    source
+  ) => {
+    return (
+      sourceIcons[source] ||
+      GitBranch
+    );
   };
 
-  // ---------------------------------------
-// SELECT EVENT
-// ---------------------------------------
+  /*
+   * ============================================================
+   * GRAPH NODE POSITIONS
+   * ============================================================
+   */
 
-const handleSelectEvent = (event) => {
-  setSelectedEvent(event);
-};
+  const nodePositions = [
+    {
+      left: "15%",
+      top: "25%",
+    },
 
+    {
+      left: "39%",
+      top: "60%",
+    },
 
-// ---------------------------------------
-// TRACE RELATED EVENTS
-// ---------------------------------------
+    {
+      left: "65%",
+      top: "35%",
+    },
 
-const handleTraceRelatedEvents = () => {
-  if (!selectedEvent) return;
+    {
+      left: "82%",
+      top: "65%",
+    },
 
-  const selectedId =
-    selectedEvent.id ||
-    selectedEvent.event_id;
+    {
+      left: "25%",
+      top: "75%",
+    },
 
-  if (!selectedId) return;
+    {
+      left: "55%",
+      top: "20%",
+    },
+  ];
 
-  const relatedIds = new Set();
-
-  relatedIds.add(selectedId);
-
-  relationships.forEach((relationship) => {
-    if (relationship.source === selectedId) {
-      relatedIds.add(relationship.target);
-    }
-
-    if (relationship.target === selectedId) {
-      relatedIds.add(relationship.source);
-    }
-  });
-
-  setTracedEventIds(
-    Array.from(relatedIds)
-  );
-};
-
-
-// ---------------------------------------
-// CLEAR TRACE
-// ---------------------------------------
-
-const clearTrace = () => {
-  setTracedEventIds([]);
-};
-
-  // ---------------------------------------
-  // RENDER
-  // ---------------------------------------
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
 
   return (
     <main className="graph-page">
 
-      {/* =====================================
+      {/* ======================================================
           HEADER
-      ====================================== */}
+      ====================================================== */}
 
       <section className="page-header">
 
@@ -414,29 +371,33 @@ const clearTrace = () => {
           </h1>
 
           <p className="page-description">
-            Explore how independent events connect
-            across time, systems and evidence.
+            Explore how independent events
+            connect across time, systems and
+            evidence.
           </p>
         </div>
 
         <div className="graph-status">
+
           <span className="status-dot" />
+
           GRAPH SYNCHRONIZED
+
         </div>
 
       </section>
 
 
-      {/* =====================================
-          GRAPH WORKSPACE
-      ====================================== */}
+      {/* ======================================================
+          WORKSPACE
+      ====================================================== */}
 
       <section className="graph-workspace">
 
 
-        {/* ===================================
+        {/* ====================================================
             GRAPH CANVAS
-        ==================================== */}
+        ==================================================== */}
 
         <div className="graph-canvas">
 
@@ -446,6 +407,7 @@ const clearTrace = () => {
           <div className="canvas-header">
 
             <div>
+
               <span className="eyebrow">
                 CASE CG-2026-001
               </span>
@@ -453,15 +415,13 @@ const clearTrace = () => {
               <h2>
                 Infrastructure Migration
               </h2>
+
             </div>
 
 
             <div className="graph-controls">
 
-              <button
-                type="button"
-                aria-label="Zoom out"
-              >
+              <button>
                 −
               </button>
 
@@ -469,10 +429,7 @@ const clearTrace = () => {
                 100%
               </span>
 
-              <button
-                type="button"
-                aria-label="Zoom in"
-              >
+              <button>
                 +
               </button>
 
@@ -481,9 +438,9 @@ const clearTrace = () => {
           </div>
 
 
-          {/* =================================
+          {/* ==================================================
               NETWORK
-          ================================== */}
+          ================================================== */}
 
           <div
             className="network"
@@ -502,209 +459,44 @@ const clearTrace = () => {
 
             {/* ERROR */}
 
-            {!isLoading && error && (
+            {error && (
               <div className="graph-error">
                 {error}
               </div>
             )}
 
 
-            {/* =================================
-                SVG CONNECTION LINES
-            ================================== */}
+            {/* =================================================
+                DYNAMIC CONNECTION LINES
+            ================================================= */}
 
-            {!isLoading &&
-              !error &&
-              connectionLines.length > 0 && (
+            <svg
+              className="graph-connections"
+              width="100%"
+              height="100%"
+              viewBox="0 0 1000 600"
+              preserveAspectRatio="none"
+            >
 
-                <svg
-                  className="graph-connections"
-                  width="100%"
-                  height="100%"
-                  aria-hidden="true"
-                >
-
-                  <defs>
-
-                    <linearGradient
-                      id="connectionGradient"
-                      x1="0%"
-                      y1="0%"
-                      x2="100%"
-                      y2="100%"
-                    >
-                      <stop
-                        offset="0%"
-                        stopColor="rgba(56,189,248,0.15)"
-                      />
-
-                      <stop
-                        offset="50%"
-                        stopColor="rgba(56,189,248,0.8)"
-                      />
-
-                      <stop
-                        offset="100%"
-                        stopColor="rgba(56,189,248,0.15)"
-                      />
-                    </linearGradient>
-
-                  </defs>
-
-
-                  {connectionLines.map(
-  (line) => {
-    const isLineTraced =
-      tracedEventIds.includes(
-        line.source
-      ) &&
-      tracedEventIds.includes(
-        line.target
-      );
-
-    const isTraceActive =
-      tracedEventIds.length > 0;
-
-    return (
-      <line
-        key={line.id}
-        x1={line.x1}
-        y1={line.y1}
-        x2={line.x2}
-        y2={line.y2}
-        className={`dynamic-connection
-          ${
-            isLineTraced
-              ? "traced-connection"
-              : ""
-          }
-          ${
-            isTraceActive &&
-            !isLineTraced
-              ? "dimmed-connection"
-              : ""
-          }
-        `}
-      />
-    );
-  }
-)}
-
-                </svg>
-
+              {connectionLines.map(
+                (line) => (
+                  <line
+                    key={line.id}
+                    x1={line.x1}
+                    y1={line.y1}
+                    x2={line.x2}
+                    y2={line.y2}
+                    className="dynamic-connection"
+                  />
+                )
               )}
 
-
-            {/* =================================
-                EVENTS
-            ================================== */}
-
-            {!isLoading &&
-              !error &&
-              events.map(
-                (event, index) => {
-
-                  const Icon =
-                    sourceIcons[
-                      event.source
-                    ] || GitBranch;
-
-                  const eventId =
-                    event.id ||
-                    event.event_id ||
-                    `event-${index}`;
-
-                  const position =
-                    nodePositions[index] || {
-                      left: "50%",
-                      top: "50%",
-                    };
-
-                  const selectedId =
-                    selectedEvent?.id ||
-                    selectedEvent?.event_id;
-
-                  const isSelected =
-  selectedId === eventId;
-
-const isTraced =
-  tracedEventIds.includes(eventId);
-
-const isTraceActive =
-  tracedEventIds.length > 0;
-
-return (
-  <button
-                      key={eventId}
-                      ref={(element) => {
-                        nodeRefs.current[
-                          index
-                        ] = element;
-                      }}
-                      type="button"
-                      className={`graph-node
-  ${isSelected ? "selected" : ""}
-  ${isTraced ? "traced" : ""}
-  ${
-    isTraceActive && !isTraced
-      ? "dimmed"
-      : ""
-  }
-`}
-                      style={{
-                        left: position.left,
-                        top: position.top,
-                      }}
-                      onClick={() =>
-                        handleSelectEvent(
-                          event
-                        )
-                      }
-                    >
-
-                      {/* NODE ICON */}
-
-                      <div className="node-icon">
-                        <Icon size={17} />
-                      </div>
+            </svg>
 
 
-                      {/* NODE CONTENT */}
-
-                      <div className="node-content">
-
-                        <span>
-                          {event.source ||
-                            "System"}
-                        </span>
-
-                        <strong>
-                          {event.title ||
-                            event.name ||
-                            "Unknown Event"}
-                        </strong>
-
-                        <small>
-                          {eventId}
-                        </small>
-
-                        <small className="node-time">
-                          {formatTime(
-                            event.timestamp
-                          )}
-                        </small>
-
-                      </div>
-
-                    </button>
-                  );
-                }
-              )}
-
-
-            {/* =================================
-                CENTER AI SIGNAL
-            ================================== */}
+            {/* =================================================
+                AI CORE
+            ================================================= */}
 
             <div className="graph-core">
 
@@ -718,28 +510,164 @@ return (
 
             </div>
 
+
+            {/* =================================================
+                EVENTS
+            ================================================= */}
+
+            {events.map(
+              (
+                event,
+                index
+              ) => {
+
+                const Icon =
+                  getEventIcon(
+                    event.source
+                  );
+
+                const eventId =
+                  event.id ||
+                  event.event_id ||
+                  `event-${index}`;
+
+                const position =
+                  nodePositions[
+                    index
+                  ] ||
+                  {
+                    left: "50%",
+                    top: "50%",
+                  };
+
+                const selectedId =
+                  selectedEvent
+                    ? selectedEvent.id ||
+                      selectedEvent.event_id
+                    : null;
+
+                const isSelected =
+                  selectedId ===
+                  eventId;
+
+                return (
+
+                  <button
+                    key={eventId}
+                    className={
+                      `graph-node ${
+                        isSelected
+                          ? "selected"
+                          : ""
+                      }`
+                    }
+                    style={{
+                      left:
+                        position.left,
+
+                      top:
+                        position.top,
+                    }}
+                    onClick={() =>
+                      setSelectedEvent(
+                        event
+                      )
+                    }
+                  >
+
+                    {/* ICON */}
+
+                    <div className="node-icon">
+
+                      <Icon
+                        size={17}
+                      />
+
+                    </div>
+
+
+                    {/* CONTENT */}
+
+                    <div className="node-content">
+
+                      <span>
+                        {event.source ||
+                          "System"}
+                      </span>
+
+                      <strong>
+                        {event.title ||
+                          event.name ||
+                          "Unknown Event"}
+                      </strong>
+
+                      <small>
+                        {eventId}
+                      </small>
+
+                      <small className="node-time">
+
+                        {event.timestamp
+                          ? new Date(
+                              event.timestamp
+                            ).toLocaleTimeString(
+                              [],
+                              {
+                                hour:
+                                  "2-digit",
+
+                                minute:
+                                  "2-digit",
+
+                                hour12:
+                                  false,
+                              }
+                            )
+                          : "--:--"}
+
+                      </small>
+
+                    </div>
+
+                  </button>
+
+                );
+              }
+            )}
+
           </div>
 
 
-          {/* =================================
+          {/* ==================================================
               LEGEND
-          ================================== */}
+          ================================================== */}
 
           <div className="graph-legend">
 
             <span>
+
               <i className="legend-dot event-dot" />
+
               EVENT
+
             </span>
 
+
             <span>
+
               <i className="legend-line" />
+
               TEMPORAL RELATION
+
             </span>
 
+
             <span>
+
               <i className="legend-dot core-dot" />
+
               AI INFERENCE
+
             </span>
 
           </div>
@@ -747,15 +675,17 @@ return (
         </div>
 
 
-        {/* =====================================
-            INSPECTOR PANEL
-        ====================================== */}
+        {/* ====================================================
+            INSPECTOR
+        ==================================================== */}
 
         <aside className="graph-inspector">
+
 
           {selectedEvent ? (
 
             <>
+
 
               {/* INSPECTOR HEADER */}
 
@@ -766,14 +696,16 @@ return (
                 </span>
 
                 <button
-                  type="button"
                   className="close-button"
-                  aria-label="Close event details"
                   onClick={() =>
-                    setSelectedEvent(null)
+                    setSelectedEvent(
+                      null
+                    )
                   }
                 >
+
                   <X size={16} />
+
                 </button>
 
               </div>
@@ -788,12 +720,14 @@ return (
                   {(() => {
 
                     const Icon =
-                      sourceIcons[
+                      getEventIcon(
                         selectedEvent.source
-                      ] || GitBranch;
+                      );
 
                     return (
-                      <Icon size={20} />
+                      <Icon
+                        size={20}
+                      />
                     );
 
                   })()}
@@ -809,9 +743,8 @@ return (
                   </span>
 
                   <strong>
-                    {selectedEvent.event_id ||
-                      selectedEvent.id ||
-                      "Unknown ID"}
+                    {selectedEvent.id ||
+                      selectedEvent.event_id}
                   </strong>
 
                 </div>
@@ -822,17 +755,21 @@ return (
               {/* TITLE */}
 
               <h2>
+
                 {selectedEvent.title ||
                   selectedEvent.name ||
                   "Unknown Event"}
+
               </h2>
 
 
               {/* DESCRIPTION */}
 
               <p className="inspector-description">
+
                 {selectedEvent.description ||
-                  "No description available for this evidence event."}
+                  "No description available for this event."}
+
               </p>
 
 
@@ -846,13 +783,20 @@ return (
                 <div>
 
                   <span>
-                    <Clock3 size={13} />
+
+                    <Clock3
+                      size={13}
+                    />
+
                     TIMESTAMP
+
                   </span>
 
                   <strong>
+
                     {selectedEvent.timestamp ||
                       "Unknown"}
+
                   </strong>
 
                 </div>
@@ -863,13 +807,20 @@ return (
                 <div>
 
                   <span>
-                    <ShieldCheck size={13} />
+
+                    <ShieldCheck
+                      size={13}
+                    />
+
                     EVENT TYPE
+
                   </span>
 
                   <strong>
+
                     {selectedEvent.event_type ||
                       "Evidence Event"}
+
                   </strong>
 
                 </div>
@@ -898,7 +849,8 @@ return (
 
                   <div
                     style={{
-                      width: "94%",
+                      width:
+                        "94%",
                     }}
                   />
 
@@ -909,37 +861,22 @@ return (
 
               {/* TRACE */}
 
-              {tracedEventIds.length > 0 ? (
+              <button className="trace-button">
 
-  <button
-    type="button"
-    className="trace-button"
-    onClick={clearTrace}
-  >
-    Clear trace
+                Trace related events
 
-    <X size={15} />
-  </button>
+                <ArrowRight
+                  size={15}
+                />
 
-) : (
-
-  <button
-    type="button"
-    className="trace-button"
-    onClick={handleTraceRelatedEvents}
-  >
-    Trace related events
-
-    <ArrowRight size={15} />
-  </button>
-
-)}
+              </button>
 
             </>
 
           ) : (
 
             <>
+
 
               {/* DEFAULT INSPECTOR */}
 
@@ -954,25 +891,32 @@ return (
 
 
               <h2>
+
                 Select an
                 <br />
                 evidence node.
+
               </h2>
 
 
               <p>
-                Select an event to inspect its
-                source, timestamp, relevance and
-                relationship to the wider incident
+
+                Select an event to inspect
+                its source, timestamp,
+                relevance and relationship
+                to the wider incident
                 sequence.
+
               </p>
 
 
-              {/* GRAPH SUMMARY */}
+              {/* SUMMARY */}
 
               <div className="graph-summary">
 
+
                 <div>
+
                   <strong>
                     {events.length}
                   </strong>
@@ -980,10 +924,12 @@ return (
                   <span>
                     EVENTS
                   </span>
+
                 </div>
 
 
                 <div>
+
                   <strong>
                     {relationships.length}
                   </strong>
@@ -991,10 +937,12 @@ return (
                   <span>
                     LINKS
                   </span>
+
                 </div>
 
 
                 <div>
+
                   <strong>
                     87%
                   </strong>
@@ -1002,7 +950,9 @@ return (
                   <span>
                     CONFIDENCE
                   </span>
+
                 </div>
+
 
               </div>
 
