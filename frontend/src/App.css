@@ -5507,3 +5507,115 @@
   letter-spacing: 1.4px;
   opacity: 0.45;
 }
+
+.graph-connections {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+.dynamic-connection {
+  stroke: rgba(76, 201, 240, 0.55);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 5;
+  filter: drop-shadow(0 0 4px rgba(76, 201, 240, 0.25));
+}
+
+.graph-node {
+  position: absolute;
+  z-index: 2;
+}
+
+.graph-core {
+  z-index: 3;
+}
+/* =========================================
+   DYNAMIC GRAPH CONNECTIONS
+========================================= */
+
+.graph-connections {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.graph-edge {
+  stroke: rgba(73, 200, 255, 0.55);
+  stroke-width: 2;
+  stroke-dasharray: 7 7;
+  filter: drop-shadow(0 0 5px rgba(73, 200, 255, 0.25));
+  animation: edgeFlow 2.5s linear infinite;
+}
+
+@keyframes edgeFlow {
+  from {
+    stroke-dashoffset: 28;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* =========================================
+   DYNAMIC GRAPH CONNECTIONS
+========================================= */
+
+.network {
+  position: relative;
+  overflow: hidden;
+}
+
+.graph-connections {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.dynamic-connection {
+  stroke: rgba(56, 189, 248, 0.55);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-dasharray: 6 6;
+  fill: none;
+  animation: graphConnectionFlow 2.5s linear infinite;
+}
+
+@keyframes graphConnectionFlow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+
+/* =========================================
+   GRAPH NODES
+========================================= */
+
+.graph-node {
+  position: absolute;
+  z-index: 5;
+}
+
+
+/* =========================================
+   GRAPH CORE
+========================================= */
+
+.graph-core {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
