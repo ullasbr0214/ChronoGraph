@@ -16,7 +16,7 @@ import EvidenceMap from "../components/EvidenceMap";
 
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { events } from "../data/events";
+import { getEvents } from "../services/api";
 
 import { generateHypothesis } from "../utils/investigationEngine";
 
@@ -31,31 +31,44 @@ const sourceIcons = {
 export default function Investigation() {
 
   const location = useLocation();
+const navigate = useNavigate();
 
-  const navigate = useNavigate();
+const gap = location.state?.gap;
 
-  const gap = location.state?.gap;
+const [events, setEvents] = useState([]);
+const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+const [eventsError, setEventsError] = useState("");
 
-  const [isAnalyzing, setIsAnalyzing] = useState(true);
-
+const [isAnalyzing, setIsAnalyzing] = useState(true);
 
   useEffect(() => {
+  async function loadEvents() {
+    try {
+      setIsLoadingEvents(true);
+      setEventsError("");
 
-    if (!gap) {
-      setIsAnalyzing(false);
-      return;
+      const response = await getEvents();
+
+      console.log("Investigation events:", response);
+
+      setEvents(
+  Array.isArray(response)
+    ? response
+    : response.events || []
+);
+    } catch (error) {
+      console.error("Failed to load investigation events:", error);
+
+      setEventsError(
+        error.message || "Failed to load investigation events"
+      );
+    } finally {
+      setIsLoadingEvents(false);
     }
+  }
 
-    setIsAnalyzing(true);
-
-    const timer = setTimeout(() => {
-      setIsAnalyzing(false);
-    }, 1400);
-
-    return () => clearTimeout(timer);
-
-  }, [gap]);
-
+  loadEvents();
+}, []);
 
   /*
    * =====================================================
@@ -1111,17 +1124,4 @@ export default function Investigation() {
 
   );
 
-}
-
-export async function getEvents() {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/graph/events`
-  );
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || "Failed to fetch events");
-  }
-
-  return response.json();
 }
