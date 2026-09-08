@@ -25,51 +25,84 @@ class Neo4jDatabase:
             auth=(self.username, self.password),
         )
 
+    # ---------------------------------------------------------
+    # CLOSE CONNECTION
+    # ---------------------------------------------------------
+
     def close(self):
         """Close the Neo4j driver."""
         self.driver.close()
 
+    # ---------------------------------------------------------
+    # VERIFY CONNECTION
+    # ---------------------------------------------------------
+
     def verify_connection(self):
         """Verify that ChronoGraph can connect to Neo4j."""
+
         with self.driver.session() as session:
-            result = session.run("RETURN 1 AS connected")
+            result = session.run(
+                "RETURN 1 AS connected"
+            )
+
             record = result.single()
 
-            return record is not None and record["connected"] == 1
+            return (
+                record is not None
+                and record["connected"] == 1
+            )
+
+    # ---------------------------------------------------------
+    # GET ALL EVENTS
+    # ---------------------------------------------------------
 
     def get_events(self):
         """Return all Event nodes ordered by timestamp."""
 
         query = """
         MATCH (e:Event)
+
         RETURN
             e.id AS id,
             e.source AS source,
             e.title AS title,
             e.description AS description,
-            e.timestamp AS timestamp
+            e.timestamp AS timestamp,
+            e.event_type AS event_type
+
         ORDER BY e.timestamp
         """
 
         with self.driver.session() as session:
+
             result = session.run(query)
 
-            return [record.data() for record in result]
+            return [
+                record.data()
+                for record in result
+            ]
+
+    # ---------------------------------------------------------
+    # GET ONE EVENT
+    # ---------------------------------------------------------
 
     def get_event(self, event_id):
         """Return a single Event by ID."""
 
         query = """
         MATCH (e:Event {id: $event_id})
+
         RETURN
             e.id AS id,
             e.source AS source,
             e.title AS title,
             e.description AS description,
-            e.timestamp AS timestamp
+            e.timestamp AS timestamp,
+            e.event_type AS event_type
         """
 
         with self.driver.session() as session:
+
             result = session.run(
                 query,
                 event_id=event_id,
@@ -82,50 +115,68 @@ class Neo4jDatabase:
 
             return record.data()
 
+    # ---------------------------------------------------------
+    # GET RELATED EVENTS
+    # ---------------------------------------------------------
+
     def get_related_events(self, event_id):
         """Return events connected to a specific Event."""
 
         query = """
         MATCH (e:Event {id: $event_id})-[r]-(related:Event)
+
         RETURN
             related.id AS id,
             related.source AS source,
             related.title AS title,
             related.description AS description,
             related.timestamp AS timestamp,
+            related.event_type AS event_type,
             type(r) AS relationship
+
         ORDER BY related.timestamp
         """
 
         with self.driver.session() as session:
+
             result = session.run(
                 query,
                 event_id=event_id,
             )
 
-            return [record.data() for record in result]
+            return [
+                record.data()
+                for record in result
+            ]
+
+    # ---------------------------------------------------------
+    # GET COMPLETE GRAPH
+    # ---------------------------------------------------------
 
     def get_graph(self):
         """
         Return all Event nodes and their relationships.
 
-        This is used by the Graph API to provide data
-        to the ChronoGraph frontend.
+        Used by the Graph API and frontend graph explorer.
         """
 
         nodes_query = """
         MATCH (e:Event)
+
         RETURN
             e.id AS id,
             e.source AS source,
             e.title AS title,
             e.description AS description,
-            e.timestamp AS timestamp
+            e.timestamp AS timestamp,
+            e.event_type AS event_type
+
         ORDER BY e.timestamp
         """
 
         relationships_query = """
         MATCH (a:Event)-[r]->(b:Event)
+
         RETURN
             a.id AS source,
             b.id AS target,
@@ -134,12 +185,22 @@ class Neo4jDatabase:
 
         with self.driver.session() as session:
 
-            nodes_result = session.run(nodes_query)
+            # ---------------------------------------------
+            # EVENTS / NODES
+            # ---------------------------------------------
+
+            nodes_result = session.run(
+                nodes_query
+            )
 
             nodes = [
                 record.data()
                 for record in nodes_result
             ]
+
+            # ---------------------------------------------
+            # RELATIONSHIPS
+            # ---------------------------------------------
 
             relationships_result = session.run(
                 relationships_query
@@ -155,38 +216,61 @@ class Neo4jDatabase:
                 "relationships": relationships,
             }
 
+    # ---------------------------------------------------------
+    # CREATE / UPDATE EVENT
+    # ---------------------------------------------------------
+
     def create_event(self, event):
         """Create or update an Event node."""
 
         query = """
         MERGE (e:Event {id: $id})
+
         SET
             e.source = $source,
             e.title = $title,
             e.description = $description,
-            e.timestamp = $timestamp
+            e.timestamp = $timestamp,
+            e.event_type = $event_type
 
         RETURN
             e.id AS id,
             e.source AS source,
             e.title AS title,
             e.description AS description,
-            e.timestamp AS timestamp
+            e.timestamp AS timestamp,
+            e.event_type AS event_type
         """
 
         with self.driver.session() as session:
+
             result = session.run(
                 query,
                 id=event["id"],
                 source=event.get("source"),
                 title=event.get("title"),
-                description=event.get("description", ""),
+                description=event.get(
+                    "description",
+                    ""
+                ),
                 timestamp=event.get("timestamp"),
+                event_type=event.get(
+                    "event_type",
+                    "Evidence Event"
+                ),
             )
 
             record = result.single()
 
-            return record.data() if record else None
+            return (
+                record.data()
+                if record
+                else None
+            )
+
+    # ---------------------------------------------------------
+    # CREATE RELATIONSHIP
+    # ---------------------------------------------------------
 
     def create_relationship(
         self,
@@ -213,6 +297,7 @@ class Neo4jDatabase:
         query = f"""
         MATCH (a:Event {{id: $event_id}})
         MATCH (b:Event {{id: $related_event_id}})
+
         MERGE (a)-[r:{relationship}]->(b)
 
         RETURN
@@ -222,6 +307,7 @@ class Neo4jDatabase:
         """
 
         with self.driver.session() as session:
+
             result = session.run(
                 query,
                 event_id=event_id,
@@ -230,4 +316,8 @@ class Neo4jDatabase:
 
             record = result.single()
 
-            return record.data() if record else None
+            return (
+                record.data()
+                if record
+                else None
+            )

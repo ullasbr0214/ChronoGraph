@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   GitBranch,
@@ -8,356 +8,598 @@ import {
   ShieldCheck,
   ArrowRight,
   X,
+  RefreshCw,
+  ZoomIn,
+  ZoomOut,
+  AlertTriangle,
 } from "lucide-react";
 
-import { getEvents } from "../services/api";
+import { getGraph } from "../services/api";
 
 const sourceIcons = {
   Slack: MessageSquare,
   GitHub: GitBranch,
   Email: Mail,
-
   "System Log": ShieldCheck,
   "Security Log": ShieldCheck,
   "Network Log": GitBranch,
   "Application Log": ShieldCheck,
 };
 
+const DEFAULT_POSITIONS = [
+  {
+    left: "15%",
+    top: "25%",
+  },
+  {
+    left: "39%",
+    top: "60%",
+  },
+  {
+    left: "65%",
+    top: "35%",
+  },
+  {
+    left: "82%",
+    top: "65%",
+  },
+  {
+    left: "25%",
+    top: "70%",
+  },
+  {
+    left: "75%",
+    top: "20%",
+  },
+];
+
+function getEventId(event) {
+  return event?.id || event?.event_id || null;
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) return "--:--";
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return "Unknown date";
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown date";
+  }
+
+  return date.toLocaleDateString([], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatDateTime(timestamp) {
+  if (!timestamp) return "Unknown";
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  return date.toLocaleString([], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function getSourceIcon(source) {
+  return sourceIcons[source] || GitBranch;
+}
+
+function createTemporalRelationships(events) {
+  if (!events || events.length < 2) {
+    return [];
+  }
+
+  return events
+    .slice(0, -1)
+    .map((event, index) => {
+      const source = getEventId(event);
+      const target = getEventId(events[index + 1]);
+
+      if (!source || !target) {
+        return null;
+      }
+
+      return {
+        source,
+        target,
+        relationship: "PRECEDES",
+        generated: true,
+      };
+    })
+    .filter(Boolean);
+}
+
 export default function GraphPage() {
-  const [selectedEvent, setSelectedEvent] = useState(null);
+  const networkRef = useRef(null);
 
   const [events, setEvents] = useState([]);
   const [relationships, setRelationships] = useState([]);
 
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
 
   const [connectionLines, setConnectionLines] = useState([]);
 
-  // Reference to graph area
-  const networkRef = useRef(null);
+  const [zoom, setZoom] = useState(100);
 
   /*
-   * ============================================================
-   * LOAD GRAPH DATA
-   * ============================================================
+   * -------------------------------------------------------
+   * LOAD GRAPH
+   * -------------------------------------------------------
    */
 
-  useEffect(() => {
-    async function loadGraph() {
-      try {
-        setIsLoading(true);
-        setError("");
+  const loadGraph = useCallback(async () => {
+    try {
+      setError("");
 
-        const response = await getEvents();
+      setIsLoading(true);
+      setIsRefreshing(true);
 
-        console.log(
-          "GRAPH BACKEND RESPONSE:",
-          JSON.stringify(response, null, 2)
+      const response = await getGraph();
+
+      console.log(
+        "CHRONOGRAPH GRAPH RESPONSE:",
+        JSON.stringify(response, null, 2)
+      );
+
+      const backendNodes = Array.isArray(response?.nodes)
+        ? response.nodes
+        : [];
+
+      const backendRelationships = Array.isArray(
+        response?.relationships
+      )
+        ? response.relationships
+        : [];
+
+      /*
+       * Sort nodes chronologically.
+       */
+      const sortedEvents = [...backendNodes].sort((a, b) => {
+        const dateA = new Date(a.timestamp).getTime();
+        const dateB = new Date(b.timestamp).getTime();
+
+        return (
+          (Number.isNaN(dateA) ? 0 : dateA) -
+          (Number.isNaN(dateB) ? 0 : dateB)
         );
+      });
 
-        /*
-         * Backend can return:
-         *
-         * {
-         *   success: true,
-         *   count: 4,
-         *   events: [...]
-         * }
-         *
-         * OR:
-         *
-         * [...]
-         */
+      /*
+       * If Neo4j has relationships, use them.
+       *
+       * If there are no relationships yet, create temporal
+       * PRECEDES relationships between consecutive events.
+       *
+       * This keeps the graph useful even before explicit
+       * Neo4j relationships are created.
+       */
+      const validBackendRelationships =
+        backendRelationships
+          .map((relationship) => ({
+            source:
+              relationship.source ||
+              relationship.from ||
+              relationship.from_id,
 
-        const backendEvents = Array.isArray(response)
-          ? response
-          : response?.events || [];
+            target:
+              relationship.target ||
+              relationship.to ||
+              relationship.to_id,
 
-        /*
-         * Sort events according to timestamp
-         */
+            relationship:
+              relationship.relationship ||
+              "RELATED_TO",
+          }))
+          .filter(
+            (relationship) =>
+              relationship.source &&
+              relationship.target
+          );
 
-        const sortedEvents = [...backendEvents].sort(
-          (a, b) =>
-            new Date(a.timestamp) -
-            new Date(b.timestamp)
+      const finalRelationships =
+        validBackendRelationships.length > 0
+          ? validBackendRelationships
+          : createTemporalRelationships(sortedEvents);
+
+      setEvents(sortedEvents);
+      setRelationships(finalRelationships);
+
+      console.log(
+        "GRAPH NODES:",
+        sortedEvents
+      );
+
+      console.log(
+        "GRAPH RELATIONSHIPS:",
+        finalRelationships
+      );
+
+      /*
+       * Keep selected event synchronized with refreshed data.
+       */
+      setSelectedEvent((previousSelected) => {
+        if (!previousSelected) {
+          return null;
+        }
+
+        const selectedId = getEventId(previousSelected);
+
+        return (
+          sortedEvents.find(
+            (event) => getEventId(event) === selectedId
+          ) || null
         );
+      });
+    } catch (err) {
+      console.error(
+        "Failed to load ChronoGraph:",
+        err
+      );
 
-        setEvents(sortedEvents);
+      setError(
+        err?.message ||
+          "Failed to load graph data."
+      );
 
-        /*
-         * Create temporal relationships
-         *
-         * EVT-001 → EVT-002
-         * EVT-002 → EVT-003
-         * EVT-003 → EVT-004
-         */
+      setEvents([]);
+      setRelationships([]);
+    } finally {
+      setIsLoading(false);
 
-        const generatedRelationships =
-          sortedEvents
-            .slice(0, -1)
-            .map((event, index) => ({
-              source:
-                event.id ||
-                event.event_id,
-
-              target:
-                sortedEvents[index + 1].id ||
-                sortedEvents[index + 1].event_id,
-            }));
-
-        setRelationships(
-          generatedRelationships
-        );
-
-        console.log(
-          "GRAPH EVENTS:",
-          sortedEvents
-        );
-
-        console.log(
-          "GRAPH RELATIONSHIPS:",
-          generatedRelationships
-        );
-      } catch (error) {
-        console.error(
-          "Failed to load graph:",
-          error
-        );
-
-        setError(
-          error?.message ||
-            "Failed to load graph data"
-        );
-      } finally {
-        setIsLoading(false);
-      }
+      /*
+       * Small delay keeps refresh animation visible.
+       */
+      setTimeout(() => {
+        setIsRefreshing(false);
+      }, 250);
     }
-
-    loadGraph();
   }, []);
 
   /*
-   * ============================================================
-   * CALCULATE CONNECTION LINES
-   * ============================================================
+   * Initial graph load.
    */
 
   useEffect(() => {
-    if (
-      !events.length ||
-      !relationships.length
-    ) {
+    loadGraph();
+  }, [loadGraph]);
+
+  /*
+   * -------------------------------------------------------
+   * GRAPH NODE POSITIONS
+   * -------------------------------------------------------
+   */
+
+  const eventPositions = useMemo(() => {
+    return events.map((event, index) => {
+      return (
+        DEFAULT_POSITIONS[index] || {
+          left: `${50 + ((index * 17) % 35) - 17}%`,
+          top: `${25 + ((index * 29) % 50)}%`,
+        }
+      );
+    });
+  }, [events]);
+
+  /*
+   * -------------------------------------------------------
+   * CALCULATE SVG CONNECTIONS
+   * -------------------------------------------------------
+   */
+
+  const calculateConnections = useCallback(() => {
+    const network = networkRef.current;
+
+    if (!network || !events.length) {
       setConnectionLines([]);
       return;
     }
 
-    const calculateConnections = () => {
-      const network =
-        networkRef.current;
+    const nodes = network.querySelectorAll(
+      ".graph-node"
+    );
 
-      if (!network) return;
+    if (!nodes.length) {
+      setConnectionLines([]);
+      return;
+    }
 
-      const nodes =
-        network.querySelectorAll(
-          ".graph-node"
-        );
+    const networkRect =
+      network.getBoundingClientRect();
 
-      if (!nodes.length) return;
+    const positions = Array.from(nodes).map(
+      (node) => {
+        const rect =
+          node.getBoundingClientRect();
 
-      const networkRect =
-        network.getBoundingClientRect();
+        return {
+          x:
+            rect.left -
+            networkRect.left +
+            rect.width / 2,
 
-      const positions =
-        Array.from(nodes).map(
-          (node) => {
-            const rect =
-              node.getBoundingClientRect();
+          y:
+            rect.top -
+            networkRect.top +
+            rect.height / 2,
+        };
+      }
+    );
 
-            return {
-              x:
-                rect.left -
-                networkRect.left +
-                rect.width / 2,
+    const lines = relationships
+      .map((relationship, relationshipIndex) => {
+        const sourceId =
+          relationship.source ||
+          relationship.from ||
+          relationship.from_id;
 
-              y:
-                rect.top -
-                networkRect.top +
-                rect.height / 2,
-            };
-          }
-        );
+        const targetId =
+          relationship.target ||
+          relationship.to ||
+          relationship.to_id;
 
-      const lines =
-        relationships
-          .map(
-            (
-              relationship
-            ) => {
-              const sourceIndex =
-                events.findIndex(
-                  (event) =>
-                    (event.id ||
-                      event.event_id) ===
-                    relationship.source
-                );
+        const sourceIndex =
+          events.findIndex(
+            (event) =>
+              getEventId(event) === sourceId
+          );
 
-              const targetIndex =
-                events.findIndex(
-                  (event) =>
-                    (event.id ||
-                      event.event_id) ===
-                    relationship.target
-                );
+        const targetIndex =
+          events.findIndex(
+            (event) =>
+              getEventId(event) === targetId
+          );
 
-              if (
-                sourceIndex === -1 ||
-                targetIndex === -1
-              ) {
-                return null;
-              }
+        if (
+          sourceIndex === -1 ||
+          targetIndex === -1 ||
+          !positions[sourceIndex] ||
+          !positions[targetIndex]
+        ) {
+          return null;
+        }
 
-              if (
-                !positions[
-                  sourceIndex
-                ] ||
-                !positions[
-                  targetIndex
-                ]
-              ) {
-                return null;
-              }
+        return {
+          id:
+            `${sourceId}-${targetId}-${relationshipIndex}`,
 
-              return {
-                id:
-                  `${relationship.source}-` +
-                  `${relationship.target}`,
+          x1: positions[sourceIndex].x,
+          y1: positions[sourceIndex].y,
 
-                x1:
-                  positions[
-                    sourceIndex
-                  ].x,
+          x2: positions[targetIndex].x,
+          y2: positions[targetIndex].y,
 
-                y1:
-                  positions[
-                    sourceIndex
-                  ].y,
+          relationship:
+            relationship.relationship ||
+            "RELATED_TO",
 
-                x2:
-                  positions[
-                    targetIndex
-                  ].x,
+          generated:
+            relationship.generated || false,
+        };
+      })
+      .filter(Boolean);
 
-                y2:
-                  positions[
-                    targetIndex
-                  ].y,
-              };
-            }
-          )
-          .filter(Boolean);
+    setConnectionLines(lines);
+  }, [events, relationships]);
 
-      setConnectionLines(lines);
+  /*
+   * Recalculate graph lines after rendering.
+   */
+
+  useEffect(() => {
+    if (!events.length) {
+      setConnectionLines([]);
+      return;
+    }
+
+    let frameId;
+
+    const update = () => {
+      cancelAnimationFrame(frameId);
+
+      frameId = requestAnimationFrame(() => {
+        calculateConnections();
+      });
     };
 
-    /*
-     * Wait until React finishes rendering
-     */
-
-    const timer =
-      setTimeout(
-        calculateConnections,
-        100
-      );
-
-    /*
-     * Recalculate on browser resize
-     */
+    update();
 
     window.addEventListener(
       "resize",
-      calculateConnections
+      update
     );
 
+    const network =
+      networkRef.current;
+
+    let resizeObserver;
+
+    if (
+      network &&
+      typeof ResizeObserver !== "undefined"
+    ) {
+      resizeObserver =
+        new ResizeObserver(update);
+
+      resizeObserver.observe(network);
+    }
+
     return () => {
-      clearTimeout(timer);
+      cancelAnimationFrame(frameId);
 
       window.removeEventListener(
         "resize",
-        calculateConnections
+        update
       );
+
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
     };
   }, [
     events,
     relationships,
+    calculateConnections,
   ]);
 
   /*
-   * ============================================================
-   * EVENT ICON
-   * ============================================================
+   * Recalculate after zoom changes.
    */
 
-  const getEventIcon = (
-    source
-  ) => {
-    return (
-      sourceIcons[source] ||
-      GitBranch
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      calculateConnections();
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [zoom, calculateConnections]);
+
+  /*
+   * -------------------------------------------------------
+   * ZOOM CONTROLS
+   * -------------------------------------------------------
+   */
+
+  const handleZoomOut = () => {
+    setZoom((current) =>
+      Math.max(50, current - 10)
+    );
+  };
+
+  const handleZoomIn = () => {
+    setZoom((current) =>
+      Math.min(150, current + 10)
     );
   };
 
   /*
-   * ============================================================
-   * GRAPH NODE POSITIONS
-   * ============================================================
+   * -------------------------------------------------------
+   * SELECT EVENT
+   * -------------------------------------------------------
    */
 
-  const nodePositions = [
-    {
-      left: "15%",
-      top: "25%",
-    },
-
-    {
-      left: "39%",
-      top: "60%",
-    },
-
-    {
-      left: "65%",
-      top: "35%",
-    },
-
-    {
-      left: "82%",
-      top: "65%",
-    },
-
-    {
-      left: "25%",
-      top: "75%",
-    },
-
-    {
-      left: "55%",
-      top: "20%",
-    },
-  ];
+  const handleSelectEvent = (event) => {
+    setSelectedEvent(event);
+  };
 
   /*
-   * ============================================================
+   * -------------------------------------------------------
+   * RELATED EVENTS COUNT
+   * -------------------------------------------------------
+   */
+
+  const selectedRelatedEvents = useMemo(() => {
+    if (!selectedEvent) {
+      return [];
+    }
+
+    const selectedId =
+      getEventId(selectedEvent);
+
+    const relatedIds = new Set();
+
+    relationships.forEach(
+      (relationship) => {
+        const source =
+          relationship.source;
+
+        const target =
+          relationship.target;
+
+        if (source === selectedId) {
+          relatedIds.add(target);
+        }
+
+        if (target === selectedId) {
+          relatedIds.add(source);
+        }
+      }
+    );
+
+    return events.filter((event) =>
+      relatedIds.has(
+        getEventId(event)
+      )
+    );
+  }, [
+    selectedEvent,
+    relationships,
+    events,
+  ]);
+
+  /*
+   * -------------------------------------------------------
+   * CONFIDENCE
+   * -------------------------------------------------------
+   */
+
+  const graphConfidence = useMemo(() => {
+    if (!events.length) {
+      return 0;
+    }
+
+    if (!relationships.length) {
+      return 50;
+    }
+
+    const ratio =
+      relationships.length /
+      Math.max(events.length - 1, 1);
+
+    return Math.min(
+      98,
+      Math.round(70 + ratio * 20)
+    );
+  }, [
+    events.length,
+    relationships.length,
+  ]);
+
+  /*
+   * -------------------------------------------------------
    * RENDER
-   * ============================================================
+   * -------------------------------------------------------
    */
 
   return (
     <main className="graph-page">
 
-      {/* ======================================================
+      {/* =================================================
           HEADER
-      ====================================================== */}
+      ================================================= */}
 
       <section className="page-header">
 
@@ -371,43 +613,40 @@ export default function GraphPage() {
           </h1>
 
           <p className="page-description">
-            Explore how independent events
-            connect across time, systems and
-            evidence.
+            Explore how independent events connect
+            across time, systems and evidence.
           </p>
         </div>
 
         <div className="graph-status">
-
           <span className="status-dot" />
 
-          GRAPH SYNCHRONIZED
+          {isLoading
+            ? "SYNCHRONIZING GRAPH"
+            : "GRAPH SYNCHRONIZED"}
 
         </div>
 
       </section>
 
 
-      {/* ======================================================
-          WORKSPACE
-      ====================================================== */}
+      {/* =================================================
+          GRAPH WORKSPACE
+      ================================================= */}
 
       <section className="graph-workspace">
 
-
-        {/* ====================================================
+        {/* =================================================
             GRAPH CANVAS
-        ==================================================== */}
+        ================================================= */}
 
         <div className="graph-canvas">
-
 
           {/* CANVAS HEADER */}
 
           <div className="canvas-header">
 
             <div>
-
               <span className="eyebrow">
                 CASE CG-2026-001
               </span>
@@ -415,22 +654,50 @@ export default function GraphPage() {
               <h2>
                 Infrastructure Migration
               </h2>
-
             </div>
 
 
             <div className="graph-controls">
 
-              <button>
-                −
+              <button
+                type="button"
+                onClick={handleZoomOut}
+                disabled={zoom <= 50}
+                aria-label="Zoom out"
+                title="Zoom out"
+              >
+                <ZoomOut size={15} />
               </button>
 
               <span>
-                100%
+                {zoom}%
               </span>
 
-              <button>
-                +
+              <button
+                type="button"
+                onClick={handleZoomIn}
+                disabled={zoom >= 150}
+                aria-label="Zoom in"
+                title="Zoom in"
+              >
+                <ZoomIn size={15} />
+              </button>
+
+              <button
+                type="button"
+                onClick={loadGraph}
+                disabled={isRefreshing}
+                aria-label="Refresh graph"
+                title="Refresh graph"
+              >
+                <RefreshCw
+                  size={15}
+                  className={
+                    isRefreshing
+                      ? "refresh-spinning"
+                      : ""
+                  }
+                />
               </button>
 
             </div>
@@ -438,236 +705,274 @@ export default function GraphPage() {
           </div>
 
 
-          {/* ==================================================
+          {/* =================================================
               NETWORK
-          ================================================== */}
+          ================================================= */}
 
           <div
             className="network"
             ref={networkRef}
           >
 
-
             {/* LOADING */}
 
             {isLoading && (
               <div className="graph-loading">
-                Loading evidence graph...
+                <RefreshCw
+                  size={18}
+                  className="refresh-spinning"
+                />
+
+                <span>
+                  Loading evidence graph...
+                </span>
               </div>
             )}
 
 
             {/* ERROR */}
 
-            {error && (
+            {!isLoading && error && (
               <div className="graph-error">
-                {error}
+
+                <AlertTriangle size={18} />
+
+                <div>
+                  <strong>
+                    Unable to load graph
+                  </strong>
+
+                  <span>
+                    {error}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={loadGraph}
+                  >
+                    Try again
+                  </button>
+                </div>
+
               </div>
             )}
 
 
-            {/* =================================================
-                DYNAMIC CONNECTION LINES
-            ================================================= */}
+            {/* EMPTY */}
 
-            <svg
-              className="graph-connections"
-              width="100%"
-              height="100%"
-              viewBox="0 0 1000 600"
-              preserveAspectRatio="none"
-            >
+            {!isLoading &&
+              !error &&
+              events.length === 0 && (
+                <div className="graph-loading">
 
-              {connectionLines.map(
-                (line) => (
-                  <line
-                    key={line.id}
-                    x1={line.x1}
-                    y1={line.y1}
-                    x2={line.x2}
-                    y2={line.y2}
-                    className="dynamic-connection"
-                  />
-                )
+                  <ShieldCheck size={20} />
+
+                  <span>
+                    No evidence events found.
+                  </span>
+
+                </div>
               )}
 
-            </svg>
-
 
             {/* =================================================
-                AI CORE
+                SVG CONNECTIONS
             ================================================= */}
 
-            <div className="graph-core">
+            {!isLoading &&
+              events.length > 0 && (
+                <svg
+                  className="graph-connections"
+                  width="100%"
+                  height="100%"
+                  viewBox="0 0 1000 600"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
 
-              <div className="core-ring ring-one" />
+                  {connectionLines.map(
+                    (line) => (
+                      <line
+                        key={line.id}
+                        x1={
+                          (line.x1 /
+                            Math.max(
+                              networkRef.current
+                                ?.clientWidth ||
+                                1000,
+                              1
+                            )) *
+                          1000
+                        }
+                        y1={
+                          (line.y1 /
+                            Math.max(
+                              networkRef.current
+                                ?.clientHeight ||
+                                600,
+                              1
+                            )) *
+                          600
+                        }
+                        x2={
+                          (line.x2 /
+                            Math.max(
+                              networkRef.current
+                                ?.clientWidth ||
+                                1000,
+                              1
+                            )) *
+                          1000
+                        }
+                        y2={
+                          (line.y2 /
+                            Math.max(
+                              networkRef.current
+                                ?.clientHeight ||
+                                600,
+                              1
+                            )) *
+                          600
+                        }
+                        className="dynamic-connection"
+                      />
+                    )
+                  )}
 
-              <div className="core-ring ring-two" />
-
-              <div className="core-symbol">
-                ◈
-              </div>
-
-            </div>
+                </svg>
+              )}
 
 
             {/* =================================================
                 EVENTS
             ================================================= */}
 
-            {events.map(
-              (
-                event,
-                index
-              ) => {
+            {!isLoading &&
+              events.map(
+                (event, index) => {
 
-                const Icon =
-                  getEventIcon(
-                    event.source
-                  );
+                  const Icon =
+                    getSourceIcon(
+                      event.source
+                    );
 
-                const eventId =
-                  event.id ||
-                  event.event_id ||
-                  `event-${index}`;
+                  const eventId =
+                    getEventId(event);
 
-                const position =
-                  nodePositions[
-                    index
-                  ] ||
-                  {
-                    left: "50%",
-                    top: "50%",
-                  };
+                  const position =
+                    eventPositions[index];
 
-                const selectedId =
-                  selectedEvent
-                    ? selectedEvent.id ||
-                      selectedEvent.event_id
-                    : null;
+                  const isSelected =
+                    selectedEvent &&
+                    getEventId(
+                      selectedEvent
+                    ) === eventId;
 
-                const isSelected =
-                  selectedId ===
-                  eventId;
-
-                return (
-
-                  <button
-                    key={eventId}
-                    className={
-                      `graph-node ${
+                  return (
+                    <button
+                      type="button"
+                      key={
+                        eventId ||
+                        `event-${index}`
+                      }
+                      className={`graph-node ${
                         isSelected
                           ? "selected"
                           : ""
-                      }`
-                    }
-                    style={{
-                      left:
-                        position.left,
+                      }`}
+                      style={{
+                        left:
+                          position.left,
+                        top:
+                          position.top,
+                        transform: `translate(-50%, -50%) scale(${
+                          zoom / 100
+                        })`,
+                      }}
+                      onClick={() =>
+                        handleSelectEvent(
+                          event
+                        )
+                      }
+                    >
 
-                      top:
-                        position.top,
-                    }}
-                    onClick={() =>
-                      setSelectedEvent(
-                        event
-                      )
-                    }
-                  >
+                      <div className="node-icon">
+                        <Icon size={17} />
+                      </div>
 
-                    {/* ICON */}
+                      <div className="node-content">
 
-                    <div className="node-icon">
+                        <span>
+                          {event.source ||
+                            "System"}
+                        </span>
 
-                      <Icon
-                        size={17}
-                      />
+                        <strong>
+                          {event.title ||
+                            event.name ||
+                            "Unknown Event"}
+                        </strong>
 
-                    </div>
+                        <small>
+                          {eventId ||
+                            "NO-ID"}
+                        </small>
+
+                        <small className="node-time">
+                          {formatTime(
+                            event.timestamp
+                          )}
+                        </small>
+
+                      </div>
+
+                    </button>
+                  );
+                }
+              )}
 
 
-                    {/* CONTENT */}
+            {/* =================================================
+                CENTER AI CORE
+            ================================================= */}
 
-                    <div className="node-content">
+            {!isLoading &&
+              events.length > 0 && (
+                <div className="graph-core">
 
-                      <span>
-                        {event.source ||
-                          "System"}
-                      </span>
+                  <div className="core-ring ring-one" />
 
-                      <strong>
-                        {event.title ||
-                          event.name ||
-                          "Unknown Event"}
-                      </strong>
+                  <div className="core-ring ring-two" />
 
-                      <small>
-                        {eventId}
-                      </small>
+                  <div className="core-symbol">
+                    ◈
+                  </div>
 
-                      <small className="node-time">
-
-                        {event.timestamp
-                          ? new Date(
-                              event.timestamp
-                            ).toLocaleTimeString(
-                              [],
-                              {
-                                hour:
-                                  "2-digit",
-
-                                minute:
-                                  "2-digit",
-
-                                hour12:
-                                  false,
-                              }
-                            )
-                          : "--:--"}
-
-                      </small>
-
-                    </div>
-
-                  </button>
-
-                );
-              }
-            )}
+                </div>
+              )}
 
           </div>
 
 
-          {/* ==================================================
+          {/* =================================================
               LEGEND
-          ================================================== */}
+          ================================================= */}
 
           <div className="graph-legend">
 
             <span>
-
               <i className="legend-dot event-dot" />
-
               EVENT
-
             </span>
 
-
             <span>
-
               <i className="legend-line" />
-
               TEMPORAL RELATION
-
             </span>
 
-
             <span>
-
               <i className="legend-dot core-dot" />
-
               AI INFERENCE
-
             </span>
 
           </div>
@@ -675,18 +980,15 @@ export default function GraphPage() {
         </div>
 
 
-        {/* ====================================================
-            INSPECTOR
-        ==================================================== */}
+        {/* =================================================
+            SIDE INSPECTOR
+        ================================================= */}
 
         <aside className="graph-inspector">
-
 
           {selectedEvent ? (
 
             <>
-
-
               {/* INSPECTOR HEADER */}
 
               <div className="inspector-top">
@@ -696,16 +998,16 @@ export default function GraphPage() {
                 </span>
 
                 <button
+                  type="button"
                   className="close-button"
                   onClick={() =>
                     setSelectedEvent(
                       null
                     )
                   }
+                  aria-label="Close event details"
                 >
-
                   <X size={16} />
-
                 </button>
 
               </div>
@@ -718,22 +1020,17 @@ export default function GraphPage() {
                 <div className="selected-icon">
 
                   {(() => {
-
                     const Icon =
-                      getEventIcon(
+                      getSourceIcon(
                         selectedEvent.source
                       );
 
                     return (
-                      <Icon
-                        size={20}
-                      />
+                      <Icon size={20} />
                     );
-
                   })()}
 
                 </div>
-
 
                 <div>
 
@@ -743,8 +1040,9 @@ export default function GraphPage() {
                   </span>
 
                   <strong>
-                    {selectedEvent.id ||
-                      selectedEvent.event_id}
+                    {getEventId(
+                      selectedEvent
+                    ) || "NO-ID"}
                   </strong>
 
                 </div>
@@ -755,21 +1053,17 @@ export default function GraphPage() {
               {/* TITLE */}
 
               <h2>
-
                 {selectedEvent.title ||
                   selectedEvent.name ||
                   "Unknown Event"}
-
               </h2>
 
 
               {/* DESCRIPTION */}
 
               <p className="inspector-description">
-
                 {selectedEvent.description ||
-                  "No description available for this event."}
-
+                  "No description is available for this evidence event."}
               </p>
 
 
@@ -777,50 +1071,49 @@ export default function GraphPage() {
 
               <div className="inspector-data">
 
-
-                {/* TIMESTAMP */}
-
                 <div>
 
                   <span>
-
-                    <Clock3
-                      size={13}
-                    />
-
+                    <Clock3 size={13} />
                     TIMESTAMP
-
                   </span>
 
                   <strong>
-
-                    {selectedEvent.timestamp ||
-                      "Unknown"}
-
+                    {formatDateTime(
+                      selectedEvent.timestamp
+                    )}
                   </strong>
 
                 </div>
 
 
-                {/* EVENT TYPE */}
+                <div>
+
+                  <span>
+                    <ShieldCheck size={13} />
+                    EVENT TYPE
+                  </span>
+
+                  <strong>
+                    {selectedEvent.event_type ||
+                      selectedEvent.type ||
+                      "Evidence Event"}
+                  </strong>
+
+                </div>
+
 
                 <div>
 
                   <span>
-
-                    <ShieldCheck
-                      size={13}
-                    />
-
-                    EVENT TYPE
-
+                    <GitBranch size={13} />
+                    RELATED EVENTS
                   </span>
 
                   <strong>
-
-                    {selectedEvent.event_type ||
-                      "Evidence Event"}
-
+                    {
+                      selectedRelatedEvents.length
+                    }
                   </strong>
 
                 </div>
@@ -828,7 +1121,7 @@ export default function GraphPage() {
               </div>
 
 
-              {/* CONFIDENCE */}
+              {/* RELEVANCE */}
 
               <div className="evidence-confidence">
 
@@ -839,18 +1132,16 @@ export default function GraphPage() {
                   </span>
 
                   <strong>
-                    94%
+                    {graphConfidence}%
                   </strong>
 
                 </div>
-
 
                 <div className="confidence-bar">
 
                   <div
                     style={{
-                      width:
-                        "94%",
+                      width: `${graphConfidence}%`,
                     }}
                   />
 
@@ -859,15 +1150,89 @@ export default function GraphPage() {
               </div>
 
 
-              {/* TRACE */}
+              {/* RELATIONSHIP INFORMATION */}
 
-              <button className="trace-button">
+              {selectedRelatedEvents.length >
+                0 && (
 
+                <div className="selected-relationships">
+
+                  <span className="eyebrow">
+                    CONNECTED EVIDENCE
+                  </span>
+
+                  <div className="related-event-list">
+
+                    {selectedRelatedEvents
+                      .slice(0, 4)
+                      .map((relatedEvent) => {
+
+                        const RelatedIcon =
+                          getSourceIcon(
+                            relatedEvent.source
+                          );
+
+                        return (
+                          <button
+                            type="button"
+                            key={
+                              getEventId(
+                                relatedEvent
+                              )
+                            }
+                            onClick={() =>
+                              handleSelectEvent(
+                                relatedEvent
+                              )
+                            }
+                            className="related-event"
+                          >
+
+                            <div>
+                              <RelatedIcon
+                                size={15}
+                              />
+                            </div>
+
+                            <span>
+                              {relatedEvent.title ||
+                                relatedEvent.name ||
+                                "Unknown Event"}
+                            </span>
+
+                            <ArrowRight
+                              size={14}
+                            />
+
+                          </button>
+                        );
+                      })}
+
+                  </div>
+
+                </div>
+              )}
+
+
+              {/* TRACE BUTTON */}
+
+              <button
+                type="button"
+                className="trace-button"
+                onClick={() => {
+                  if (
+                    selectedRelatedEvents.length >
+                    0
+                  ) {
+                    handleSelectEvent(
+                      selectedRelatedEvents[0]
+                    );
+                  }
+                }}
+              >
                 Trace related events
 
-                <ArrowRight
-                  size={15}
-                />
+                <ArrowRight size={15} />
 
               </button>
 
@@ -876,8 +1241,6 @@ export default function GraphPage() {
           ) : (
 
             <>
-
-
               {/* DEFAULT INSPECTOR */}
 
               <span className="eyebrow">
@@ -891,29 +1254,23 @@ export default function GraphPage() {
 
 
               <h2>
-
                 Select an
                 <br />
                 evidence node.
-
               </h2>
 
 
               <p>
-
-                Select an event to inspect
-                its source, timestamp,
-                relevance and relationship
-                to the wider incident
+                Select an event to inspect its
+                source, timestamp, relevance and
+                relationship to the wider incident
                 sequence.
-
               </p>
 
 
               {/* SUMMARY */}
 
               <div className="graph-summary">
-
 
                 <div>
 
@@ -944,7 +1301,7 @@ export default function GraphPage() {
                 <div>
 
                   <strong>
-                    87%
+                    {graphConfidence}%
                   </strong>
 
                   <span>
@@ -953,6 +1310,18 @@ export default function GraphPage() {
 
                 </div>
 
+              </div>
+
+
+              {/* GRAPH CONNECTION STATUS */}
+
+              <div className="graph-inspector-status">
+
+                <ShieldCheck size={16} />
+
+                <span>
+                  Neo4j graph connected
+                </span>
 
               </div>
 
