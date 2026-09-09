@@ -1,463 +1,117 @@
-import { useEffect, useMemo, useState } from "react";
-
-import {
-  ArrowRight,
-  CheckCircle2,
-  Clock3,
-  GitBranch,
-  Mail,
-  MessageSquare,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  X,
-  Server,
-  Network,
-  AlertTriangle,
-} from "lucide-react";
-
-import {
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
-
-import {
-  getEvents,
-  getGraph,
-} from "../services/api";
-
-import EvidenceMap from "../components/EvidenceMap";
-import IncidentReplay from "../components/IncidentReplay";
-import RootCausePath from "../components/RootCausePath";
-import MissingEvidence from "../components/MissingEvidence";
-
-import {
-  generateHypothesis,
-} from "../utils/investigationEngine";
-
-/* =========================================================
-   SOURCE ICONS
-========================================================= */
-
-const sourceIcons = {
-  slack: MessageSquare,
-  github: GitBranch,
-  email: Mail,
-
-  "system log": Server,
-  "security log": ShieldCheck,
-  "network log": Network,
-  "application log": Server,
-};
-
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
-function getEventId(event) {
-  return (
-    event?.id ||
-    event?.event_id ||
-    ""
-  );
-}
-
-
-function getEventTitle(event) {
-  return (
-    event?.title ||
-    event?.name ||
-    "Unknown Event"
-  );
-}
-
-
-function getEventSource(event) {
-  return (
-    event?.source ||
-    "System"
-  );
-}
-
-
-function getSourceIcon(source) {
-  const normalized = String(source || "")
-    .trim()
-    .toLowerCase();
-
-  return (
-    sourceIcons[normalized] ||
-    GitBranch
-  );
-}
-
-
-function getValidDate(timestamp) {
-  if (!timestamp) {
-    return null;
-  }
-
-  const date = new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date;
-}
-
-
-function formatTime(timestamp) {
-  const date = getValidDate(timestamp);
-
-  if (!date) {
-    return "--:--";
-  }
-
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-
-function formatDateTime(timestamp) {
-  const date = getValidDate(timestamp);
-
-  if (!date) {
-    return "Unknown";
-  }
-
-  return date.toLocaleString([], {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-
-function getMinutesBetween(first, second) {
-  const firstDate = getValidDate(
-    first?.timestamp
-  );
-
-  const secondDate = getValidDate(
-    second?.timestamp
-  );
-
-  if (!firstDate || !secondDate) {
-    return 0;
-  }
-
-  return Math.max(
-    0,
-    Math.round(
-      (
-        secondDate.getTime() -
-        firstDate.getTime()
-      ) / 60000
-    )
-  );
-}
-
-
-/* =========================================================
-   NORMALIZE EVENTS
-
-   Backend currently returns:
-
-   {
-     id,
-     source,
-     title,
-     description,
-     timestamp,
-     event_type
-   }
-
-   Some older components use event_id.
-
-   We keep both.
-========================================================= */
-
-function normalizeEvents(events) {
-  if (!Array.isArray(events)) {
-    return [];
-  }
-
-  return events
-    .map((event) => {
-      const id = getEventId(event);
-
-      return {
-        ...event,
-
-        id,
-
-        event_id:
-          event?.event_id ||
-          id,
-      };
-    })
-    .filter((event) => getEventId(event))
-    .sort((a, b) => {
-      const timeA =
-        getValidDate(
-          a.timestamp
-        )?.getTime();
-
-      const timeB =
-        getValidDate(
-          b.timestamp
-        )?.getTime();
-
-      if (timeA == null) {
-        return 1;
-      }
-
-      if (timeB == null) {
-        return -1;
-      }
-
-      return timeA - timeB;
-    });
-}
-
-
-/* =========================================================
-   NORMALIZE RELATIONSHIPS
-
-   Supported:
-
-   {
-     source,
-     target,
-     relationship
-   }
-
-   Also:
-
-   {
-     from_id,
-     to_id,
-     relationship
-   }
-========================================================= */
-
-function normalizeRelationships(
-  relationships
-) {
-  if (!Array.isArray(relationships)) {
-    return [];
-  }
-
-  return relationships
-    .map((relationship) => {
-      const source =
-        relationship?.source ??
-        relationship?.from ??
-        relationship?.from_id ??
-        null;
-
-      const target =
-        relationship?.target ??
-        relationship?.to ??
-        relationship?.to_id ??
-        null;
-
-      const type =
-        relationship?.relationship ??
-        relationship?.type ??
-        "RELATED_TO";
-
-      if (!source || !target) {
-        return null;
-      }
-
-      return {
-        source: String(source),
-        target: String(target),
-        relationship: String(type),
-      };
-    })
-    .filter(Boolean);
-}
-
-
-/* =========================================================
-   RELATIONSHIP WEIGHT
-========================================================= */
-
-function relationshipWeight(type) {
-  const weights = {
-    CAUSED_BY: 96,
-    LEADS_TO: 94,
-    SUPPORTS: 92,
-    PRECEDES: 88,
-    RELATED_TO: 82,
-    CONTRADICTS: 72,
-  };
-
-  return (
-    weights[
-      String(type || "").toUpperCase()
-    ] || 75
-  );
-}
-
-
-/* =========================================================
-   INVESTIGATION
-========================================================= */
+import React, { useEffect, useMemo, useState } from "react";
+import { getEvents, getGraph } from "../services/api";
 
 export default function Investigation() {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const [events, setEvents] = useState([]);
+  const [relationships, setRelationships] = useState([]);
 
-  /* =======================================================
-     STATE
-  ======================================================= */
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const [events, setEvents] =
-    useState([]);
+  const [sourceFilter, setSourceFilter] = useState("All Sources");
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [selectedGap, setSelectedGap] = useState(null);
 
-  const [relationships, setRelationships] =
-    useState([]);
-
-  const [selectedEvent, setSelectedEvent] =
-    useState(null);
-
-  const [searchTerm, setSearchTerm] =
-    useState("");
-
-  const [isLoading, setIsLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState("");
-
-
-  /* =======================================================
-     LOAD EVENTS + GRAPH
-  ======================================================= */
+  // =========================================================
+  // LOAD INVESTIGATION DATA
+  // =========================================================
 
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
 
     async function loadInvestigation() {
       try {
-        setIsLoading(true);
+        console.log("🔎 Loading ChronoGraph investigation...");
+
+        setLoading(true);
         setError("");
 
-        /* -----------------------------------------------
-           EVENTS
-        ------------------------------------------------ */
+        // ---------------------------------------------
+        // Load events
+        // ---------------------------------------------
 
-        const eventsResponse =
-          await getEvents();
-
-        /* -----------------------------------------------
-           GRAPH
-        ------------------------------------------------ */
-
-        const graphResponse =
-          await getGraph();
+        const eventsResponse = await getEvents();
 
         console.log(
-          "CHRONOGRAPH EVENTS RESPONSE:",
+          "🔥 EVENTS FROM BACKEND:",
           eventsResponse
         );
 
-        console.log(
-          "CHRONOGRAPH GRAPH RESPONSE:",
-          graphResponse
-        );
+        // Backend format:
+        // {
+        //   success: true,
+        //   count: 4,
+        //   events: [...]
+        // }
 
-        /* -----------------------------------------------
-           EXTRACT EVENTS
-        ------------------------------------------------ */
+        const backendEvents = Array.isArray(eventsResponse)
+          ? eventsResponse
+          : Array.isArray(eventsResponse?.events)
+          ? eventsResponse.events
+          : [];
 
-        const backendEvents =
-          Array.isArray(eventsResponse)
-            ? eventsResponse
-            : eventsResponse?.events || [];
+        // ---------------------------------------------
+        // Load Neo4j graph
+        // ---------------------------------------------
 
-        /* -----------------------------------------------
-           GRAPH NODES
-        ------------------------------------------------ */
+        let graphResponse = null;
 
-        const graphNodes =
-          Array.isArray(
-            graphResponse?.nodes
-          )
-            ? graphResponse.nodes
-            : [];
+        try {
+          graphResponse = await getGraph();
 
-        /* -----------------------------------------------
-           PREFER GRAPH NODES
-        ------------------------------------------------ */
-
-        const sourceEvents =
-          graphNodes.length > 0
-            ? graphNodes
-            : backendEvents;
-
-        /* -----------------------------------------------
-           NORMALIZE
-        ------------------------------------------------ */
-
-        const normalizedEvents =
-          normalizeEvents(
-            sourceEvents
+          console.log(
+            "🔥 CHRONOGRAPH GRAPH RESPONSE:",
+            graphResponse
           );
-
-        const normalizedRelationships =
-          normalizeRelationships(
-            graphResponse?.relationships
+        } catch (graphError) {
+          console.warn(
+            "⚠️ Graph endpoint unavailable:",
+            graphError
           );
+        }
+
+        // ---------------------------------------------
+        // Extract relationships
+        // ---------------------------------------------
+
+        const backendRelationships = Array.isArray(
+          graphResponse?.relationships
+        )
+          ? graphResponse.relationships
+          : [];
+
+        if (!mounted) return;
+
+        setEvents(backendEvents);
+        setRelationships(backendRelationships);
 
         console.log(
           "CHRONOGRAPH INVESTIGATION EVENTS:",
-          normalizedEvents
+          backendEvents
         );
 
         console.log(
           "CHRONOGRAPH REAL RELATIONSHIPS:",
-          normalizedRelationships
+          backendRelationships
         );
-
-        if (isMounted) {
-          setEvents(
-            normalizedEvents
-          );
-
-          setRelationships(
-            normalizedRelationships
-          );
-        }
       } catch (err) {
         console.error(
-          "Failed to load investigation:",
+          "🔥 INVESTIGATION LOAD ERROR:",
           err
         );
 
-        if (isMounted) {
-          setError(
-            err?.message ||
-              "Failed to load investigation data."
-          );
+        if (!mounted) return;
 
-          setEvents([]);
-          setRelationships([]);
-        }
+        setError(
+          err?.message ||
+            "Unable to load investigation data."
+        );
+
+        setEvents([]);
+        setRelationships([]);
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
+        if (mounted) {
+          setLoading(false);
         }
       }
     }
@@ -465,1067 +119,480 @@ export default function Investigation() {
     loadInvestigation();
 
     return () => {
-      isMounted = false;
+      mounted = false;
     };
   }, []);
 
-
-  /* =======================================================
-     QUERY PARAMETER
-
-     Supports:
-
-     /investigation?event=EVT-001
-  ======================================================= */
-
-  const queryEventId =
-    useMemo(() => {
-      const params =
-        new URLSearchParams(
-          location.search
-        );
-
-      return (
-        params.get("event") || ""
-      );
-    }, [location.search]);
-
-
-  /* =======================================================
-     SELECT EVENT FROM URL
-  ======================================================= */
-
-  useEffect(() => {
-    if (!queryEventId) {
-      return;
-    }
-
-    const matchingEvent =
-      events.find(
-        (event) =>
-          getEventId(event) ===
-          queryEventId
-      );
-
-    if (matchingEvent) {
-      setSelectedEvent(
-        matchingEvent
-      );
-    }
-  }, [
-    queryEventId,
-    events,
-  ]);
-
-
-  /* =======================================================
-     SELECT EVENT FROM NAVIGATION GAP
-  ======================================================= */
-
-  useEffect(() => {
-    const incomingGap =
-      location.state?.gap;
-
-    if (!incomingGap) {
-      return;
-    }
-
-    const fromId =
-      getEventId(
-        incomingGap.from
-      );
-
-    const matchingEvent =
-      events.find(
-        (event) =>
-          getEventId(event) ===
-          fromId
-      );
-
-    if (matchingEvent) {
-      setSelectedEvent(
-        matchingEvent
-      );
-    }
-  }, [
-    location.state,
-    events,
-  ]);
-
-
-  /* =======================================================
-     FILTER EVENTS
-  ======================================================= */
-
-  const filteredEvents =
-    useMemo(() => {
-      const query =
-        searchTerm
-          .trim()
-          .toLowerCase();
-
-      if (!query) {
-        return events;
-      }
-
-      return events.filter(
-        (event) => {
-          const searchableText = [
-            event?.id,
-            event?.event_id,
-            event?.source,
-            event?.title,
-            event?.name,
-            event?.description,
-            event?.event_type,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
-
-          return searchableText.includes(
-            query
-          );
-        }
-      );
-    }, [
-      events,
-      searchTerm,
-    ]);
-
-
-  /* =======================================================
-     TEMPORAL GAPS
-
-     A gap >= 30 minutes becomes an
-     investigation point.
-  ======================================================= */
-
-  const gaps =
-    useMemo(() => {
-      if (events.length < 2) {
-        return [];
-      }
-
-      const detectedGaps = [];
-
-      for (
-        let index = 0;
-        index < events.length - 1;
-        index += 1
-      ) {
-        const from =
-          events[index];
-
-        const to =
-          events[index + 1];
-
-        const minutes =
-          getMinutesBetween(
-            from,
-            to
-          );
-
-        if (minutes >= 30) {
-          detectedGaps.push({
-            id:
-              `${getEventId(from)}-${getEventId(to)}`,
-
-            from,
-            to,
-
-            minutes,
-
-            duration:
-              minutes * 60000,
-          });
-        }
-      }
-
-      return detectedGaps;
-    }, [events]);
-
-
-  /* =======================================================
-     SELECTED GAP
-
-     Priority:
-
-     1. Navigation gap
-     2. Gap around selected event
-     3. First detected gap
-     4. Largest gap
-  ======================================================= */
-
-  const selectedGap =
-    useMemo(() => {
-      /* -----------------------------------------------
-         1. GAP PASSED FROM ANOTHER PAGE
-      ------------------------------------------------ */
-
-      const incomingGap =
-        location.state?.gap;
-
-      if (incomingGap) {
-        const fromId =
-          getEventId(
-            incomingGap.from
-          );
-
-        const toId =
-          getEventId(
-            incomingGap.to
-          );
-
-        const from =
-          events.find(
-            (event) =>
-              getEventId(event) ===
-              fromId
-          );
-
-        const to =
-          events.find(
-            (event) =>
-              getEventId(event) ===
-              toId
-          );
-
-        if (from && to) {
-          const minutes =
-            getMinutesBetween(
-              from,
-              to
-            );
-
-          return {
-            id:
-              `${fromId}-${toId}`,
-
-            from,
-            to,
-
-            fromEvent: from,
-            toEvent: to,
-
-            minutes,
-
-            duration:
-              minutes * 60000,
-          };
-        }
-      }
-
-
-      /* -----------------------------------------------
-         2. GAP AROUND SELECTED EVENT
-      ------------------------------------------------ */
-
-      if (
-        selectedEvent &&
-        events.length > 1
-      ) {
-        const selectedId =
-          getEventId(
-            selectedEvent
-          );
-
-        const selectedIndex =
-          events.findIndex(
-            (event) =>
-              getEventId(event) ===
-              selectedId
-          );
-
-        if (
-          selectedIndex >= 0 &&
-          selectedIndex <
-            events.length - 1
-        ) {
-          const from =
-            events[selectedIndex];
-
-          const to =
-            events[
-              selectedIndex + 1
-            ];
-
-          const minutes =
-            getMinutesBetween(
-              from,
-              to
-            );
-
-          if (minutes >= 30) {
-            return {
-              id:
-                `${getEventId(from)}-${getEventId(to)}`,
-
-              from,
-              to,
-
-              fromEvent: from,
-              toEvent: to,
-
-              minutes,
-
-              duration:
-                minutes * 60000,
-            };
-          }
-        }
-      }
-
-
-      /* -----------------------------------------------
-         3. FIRST DETECTED GAP
-      ------------------------------------------------ */
-
-      if (gaps.length > 0) {
-        return gaps[0];
-      }
-
-
-      /* -----------------------------------------------
-         4. FALLBACK: LARGEST GAP
-      ------------------------------------------------ */
-
-      if (events.length < 2) {
-        return null;
-      }
-
-      let largestGap = null;
-
-      for (
-        let index = 1;
-        index < events.length;
-        index += 1
-      ) {
-        const previous =
-          events[index - 1];
-
-        const current =
-          events[index];
-
-        const start =
-          getValidDate(
-            previous.timestamp
-          );
-
-        const end =
-          getValidDate(
-            current.timestamp
-          );
-
-        if (!start || !end) {
-          continue;
-        }
-
-        const duration =
-          end.getTime() -
-          start.getTime();
-
-        if (duration <= 0) {
-          continue;
-        }
-
-        if (
-          !largestGap ||
-          duration >
-            largestGap.duration
-        ) {
-          largestGap = {
-            id:
-              `${getEventId(previous)}-${getEventId(current)}`,
-
-            from: previous,
-            to: current,
-
-            fromEvent: previous,
-            toEvent: current,
-
-            duration,
-
-            minutes:
-              Math.round(
-                duration / 60000
-              ),
-          };
-        }
-      }
-
-      return largestGap;
-    }, [
-      location.state,
-      selectedEvent,
-      events,
-      gaps,
-    ]);
-
-
-  /* =======================================================
-     RELATIONSHIP LOOKUP
-  ======================================================= */
-
-  const relationshipLookup =
-    useMemo(() => {
-      const lookup =
-        new Map();
-
-      relationships.forEach(
-        (relationship) => {
-          const source =
-            relationship.source;
-
-          const target =
-            relationship.target;
-
-          /* ---------------------------------------------
-             FORWARD
-          ---------------------------------------------- */
-
-          const forwardKey =
-            `${source}::${target}`;
-
-          lookup.set(
-            forwardKey,
-            relationship
-          );
-
-
-          /* ---------------------------------------------
-             REVERSE
-
-             Useful because the investigation
-             cares about connectivity.
-          ---------------------------------------------- */
-
-          const reverseKey =
-            `${target}::${source}`;
-
-          if (
-            !lookup.has(
-              reverseKey
-            )
-          ) {
-            lookup.set(
-              reverseKey,
-              {
-                ...relationship,
-
-                source: target,
-                target: source,
-
-                reverse: true,
-              }
-            );
-          }
-        }
-      );
-
-      return lookup;
-    }, [
-      relationships,
-    ]);
-
-
-  /* =======================================================
-     FIND SUPPORTING EVIDENCE
-
-     Priority:
-
-     1. Real Neo4j relationship
-     2. Temporal proximity
-     3. Cross-source evidence
-  ======================================================= */
-
-  const candidates =
-    useMemo(() => {
-      if (
-        !selectedGap ||
-        events.length === 0
-      ) {
-        return [];
-      }
-
-      const fromTime =
-        getValidDate(
-          selectedGap.from.timestamp
-        )?.getTime();
-
-      const toTime =
-        getValidDate(
-          selectedGap.to.timestamp
-        )?.getTime();
-
-      if (
-        fromTime == null ||
-        toTime == null
-      ) {
-        return [];
-      }
-
-      const fromId =
-        getEventId(
-          selectedGap.from
-        );
-
-      const toId =
-        getEventId(
-          selectedGap.to
-        );
-
-      const totalDistance =
-        Math.max(
-          1,
-          toTime - fromTime
-        );
-
-      return events
-        .filter(
-          (event) => {
-            const id =
-              getEventId(event);
-
-            return (
-              id !== fromId &&
-              id !== toId
-            );
-          }
-        )
-        .map(
-          (event) => {
-            const id =
-              getEventId(event);
-
-            const eventDate =
-              getValidDate(
-                event.timestamp
-              );
-
-            const eventTime =
-              eventDate?.getTime();
-
-
-            /* -----------------------------------------
-               GRAPH RELATIONSHIPS
-            ------------------------------------------ */
-
-            const relationshipFrom =
-              relationshipLookup.get(
-                `${fromId}::${id}`
-              );
-
-            const relationshipTo =
-              relationshipLookup.get(
-                `${id}::${toId}`
-              );
-
-            const relationshipFromTo =
-              relationshipLookup.get(
-                `${fromId}::${toId}`
-              );
-
-            const relationshipToFrom =
-              relationshipLookup.get(
-                `${toId}::${fromId}`
-              );
-
-
-            let score = 0;
-
-            let evidenceType =
-              "TEMPORAL";
-
-            let relationshipType =
-              null;
-
-
-            /* -----------------------------------------
-               RELATIONSHIP FROM START
-            ------------------------------------------ */
-
-            if (
-              relationshipFrom
-            ) {
-              score =
-                Math.max(
-                  score,
-                  relationshipWeight(
-                    relationshipFrom.relationship
-                  )
-                );
-
-              relationshipType =
-                relationshipFrom.relationship;
-
-              evidenceType =
-                "GRAPH";
-            }
-
-
-            /* -----------------------------------------
-               RELATIONSHIP TO END
-            ------------------------------------------ */
-
-            if (
-              relationshipTo
-            ) {
-              score =
-                Math.max(
-                  score,
-                  relationshipWeight(
-                    relationshipTo.relationship
-                  )
-                );
-
-              relationshipType =
-                relationshipTo.relationship;
-
-              evidenceType =
-                "GRAPH";
-            }
-
-
-            /* -----------------------------------------
-               DIRECT GAP RELATIONSHIP
-            ------------------------------------------ */
-
-            if (
-              relationshipFromTo ||
-              relationshipToFrom
-            ) {
-              const direct =
-                relationshipFromTo ||
-                relationshipToFrom;
-
-              score =
-                Math.max(
-                  score,
-                  relationshipWeight(
-                    direct.relationship
-                  ) - 3
-                );
-
-              relationshipType =
-                direct.relationship;
-
-              evidenceType =
-                "GRAPH";
-            }
-
-
-            /* -----------------------------------------
-               TEMPORAL PROXIMITY
-            ------------------------------------------ */
-
-            if (
-              eventTime != null
-            ) {
-              const distanceFromStart =
-                Math.abs(
-                  eventTime -
-                  fromTime
-                );
-
-              const distanceFromEnd =
-                Math.abs(
-                  toTime -
-                  eventTime
-                );
-
-              const nearestDistance =
-                Math.min(
-                  distanceFromStart,
-                  distanceFromEnd
-                );
-
-              const closeness =
-                Math.max(
-                  0,
-                  1 -
-                    nearestDistance /
-                      totalDistance
-                );
-
-              const temporalScore =
-                Math.round(
-                  50 +
-                    closeness * 35
-                );
-
-              score =
-                Math.max(
-                  score,
-                  temporalScore
-                );
-
-
-              /* ---------------------------------------
-                 EVENT INSIDE GAP
-              ---------------------------------------- */
-
-              if (
-                eventTime >=
-                  fromTime &&
-                eventTime <=
-                  toTime
-              ) {
-                score =
-                  Math.max(
-                    score,
-                    72
-                  );
-              }
-            }
-
-
-            /* -----------------------------------------
-               CROSS-SOURCE SIGNAL
-            ------------------------------------------ */
-
-            if (
-              event.source &&
-              event.source !==
-                selectedGap.from.source &&
-              event.source !==
-                selectedGap.to.source
-            ) {
-              score += 4;
-            }
-
-
-            /* -----------------------------------------
-               EVENT TYPE SIGNAL
-            ------------------------------------------ */
-
-            const eventType =
-              String(
-                event.event_type ||
-                  ""
-              ).toLowerCase();
-
-            const title =
-              String(
-                event.title ||
-                  ""
-              ).toLowerCase();
-
-            const description =
-              String(
-                event.description ||
-                  ""
-              ).toLowerCase();
-
-            const searchableText =
-              `${title} ${description} ${eventType}`;
-
-
-            const keywords = [
-              "migration",
-              "infrastructure",
-              "configuration",
-              "deploy",
-              "deployment",
-              "update",
-              "change",
-              "cloud",
-              "aws",
-              "gcp",
-              "security",
-              "network",
-              "access",
-              "login",
-            ];
-
-
-            keywords.forEach(
-              (keyword) => {
-                if (
-                  searchableText.includes(
-                    keyword
-                  )
-                ) {
-                  score += 2;
-                }
-              }
-            );
-
-
-            /* -----------------------------------------
-               EVENT TYPE BOOST
-            ------------------------------------------ */
-
-            if (
-              eventType.includes(
-                "update"
-              ) ||
-              eventType.includes(
-                "change"
-              ) ||
-              eventType.includes(
-                "deployment"
-              )
-            ) {
-              score += 10;
-            }
-
-
-            /* -----------------------------------------
-               FINAL SCORE
-            ------------------------------------------ */
-
-            score =
-              Math.min(
-                98,
-                Math.max(
-                  35,
-                  Math.round(score)
-                )
-              );
-
-
-            return {
-              ...event,
-
-              event_id:
-                event.event_id ||
-                id,
-
-              score,
-
-              evidenceType,
-
-              relationship:
-                relationshipType,
-            };
-          }
-        )
-        .filter(
-          (event) =>
-            event.score >= 55
-        )
-        .sort(
-          (a, b) =>
-            b.score -
-            a.score
-        )
-        .slice(0, 5);
-    }, [
-      selectedGap,
-      events,
-      relationshipLookup,
-    ]);
-
-
-  /* =======================================================
-     AI HYPOTHESIS
-  ======================================================= */
-
-  const hypothesis =
-    useMemo(() => {
-      try {
-        return generateHypothesis(
-          selectedGap,
-          candidates
-        );
-      } catch (err) {
-        console.error(
-          "Hypothesis generation failed:",
-          err
-        );
-
-        return {
-          title:
-            "Insufficient evidence for reconstruction.",
-
-          explanation:
-            "ChronoGraph could not generate a reliable hypothesis from the available evidence.",
-
-          confidence: 0,
-
-          signals: [],
-        };
-      }
-    }, [
-      selectedGap,
-      candidates,
-    ]);
-
-
-  /* =======================================================
-     ROOT CAUSE SEQUENCE
-  ======================================================= */
-
-  const rootCauseEvents =
-    useMemo(() => {
-      if (!selectedGap) {
-        return events.slice(
-          0,
-          3
-        );
-      }
-
-      const strongest =
-        candidates[0];
-
-      const sequence = [
-        selectedGap.from,
-      ];
-
-
-      if (
-        strongest &&
-        getEventId(strongest) !==
-          getEventId(
-            selectedGap.from
-          ) &&
-        getEventId(strongest) !==
-          getEventId(
-            selectedGap.to
-          )
-      ) {
-        sequence.push(
-          strongest
-        );
-      }
-
-
-      sequence.push(
-        selectedGap.to
-      );
-
-      return sequence;
-    }, [
-      selectedGap,
-      candidates,
-      events,
-    ]);
-
-
-  /* =======================================================
-     SUMMARY
-  ======================================================= */
-
-  const sourceCount =
-    useMemo(() => {
-      return new Set(
-        events
-          .map(
-            (event) =>
-              event?.source
-          )
-          .filter(Boolean)
-      ).size;
-    }, [
-      events,
-    ]);
-
-
-  const realRelationshipCount =
-    relationships.length;
-
-
-  const sequenceConfidence =
-    events.length === 0
-      ? 0
-      : Number(
-          hypothesis?.confidence
-        ) ||
-        (
-          realRelationshipCount > 0
-            ? 82
-            : candidates.length > 0
-              ? 72
-              : 65
-        );
-
-
-  /* =======================================================
-     SELECT EVENT
-  ======================================================= */
-
-  function handleSelectEvent(
-    event
-  ) {
-    setSelectedEvent(
-      event
-    );
-  }
-
-
-  /* =======================================================
-     CLEAR SELECTION
-  ======================================================= */
-
-  function clearSelection() {
-    setSelectedEvent(
+  // =========================================================
+  // NORMALIZE EVENT ID
+  // =========================================================
+
+  const getEventId = (event) => {
+    if (!event) return null;
+
+    return (
+      event.id ||
+      event.event_id ||
+      event.eventId ||
+      event.uuid ||
       null
     );
-  }
+  };
 
+  // =========================================================
+  // NORMALIZE EVENT TIMESTAMP
+  // =========================================================
 
-  /* =======================================================
-     EVENT RELEVANCE
-  ======================================================= */
+  const getTimestamp = (event) => {
+    if (!event) return null;
 
-  function getEventRelevance(
-    event
-  ) {
-    if (!event) {
+    return (
+      event.timestamp ||
+      event.time ||
+      event.datetime ||
+      event.created_at ||
+      null
+    );
+  };
+
+  // =========================================================
+  // NORMALIZE EVENT SOURCE
+  // =========================================================
+
+  const getSource = (event) => {
+    if (!event) return "Unknown Source";
+
+    return (
+      event.source ||
+      event.source_name ||
+      event.log_source ||
+      "Unknown Source"
+    );
+  };
+
+  // =========================================================
+  // NORMALIZE EVENT TITLE
+  // =========================================================
+
+  const getTitle = (event) => {
+    if (!event) return "Unknown Event";
+
+    return (
+      event.title ||
+      event.name ||
+      event.event_name ||
+      "Unknown Event"
+    );
+  };
+
+  // =========================================================
+  // NORMALIZE EVENT DESCRIPTION
+  // =========================================================
+
+  const getDescription = (event) => {
+    if (!event) return "";
+
+    return (
+      event.description ||
+      event.details ||
+      event.message ||
+      "No description available."
+    );
+  };
+
+  // =========================================================
+  // SORT EVENTS CHRONOLOGICALLY
+  // =========================================================
+
+  const sortedEvents = useMemo(() => {
+    return [...events].sort((a, b) => {
+      const timeA = new Date(getTimestamp(a)).getTime();
+      const timeB = new Date(getTimestamp(b)).getTime();
+
+      return timeA - timeB;
+    });
+  }, [events]);
+
+  // =========================================================
+  // AVAILABLE SOURCES
+  // =========================================================
+
+  const sources = useMemo(() => {
+    const uniqueSources = new Set();
+
+    events.forEach((event) => {
+      uniqueSources.add(getSource(event));
+    });
+
+    return [
+      "All Sources",
+      ...Array.from(uniqueSources),
+    ];
+  }, [events]);
+
+  // =========================================================
+  // FILTERED EVENTS
+  // =========================================================
+
+  const filteredEvents = useMemo(() => {
+    if (sourceFilter === "All Sources") {
+      return sortedEvents;
+    }
+
+    return sortedEvents.filter(
+      (event) => getSource(event) === sourceFilter
+    );
+  }, [sortedEvents, sourceFilter]);
+
+  // =========================================================
+  // DETECT TEMPORAL GAPS
+  // =========================================================
+
+  const detectedGaps = useMemo(() => {
+    const gaps = [];
+
+    if (sortedEvents.length < 2) {
+      return gaps;
+    }
+
+    for (let i = 0; i < sortedEvents.length - 1; i++) {
+      const current = sortedEvents[i];
+      const next = sortedEvents[i + 1];
+
+      const currentTime = new Date(
+        getTimestamp(current)
+      ).getTime();
+
+      const nextTime = new Date(
+        getTimestamp(next)
+      ).getTime();
+
+      if (
+        Number.isNaN(currentTime) ||
+        Number.isNaN(nextTime)
+      ) {
+        continue;
+      }
+
+      const differenceMs = nextTime - currentTime;
+
+      const differenceMinutes =
+        differenceMs / (1000 * 60);
+
+      // Only consider gaps greater than 15 minutes
+      if (differenceMinutes > 15) {
+        gaps.push({
+          id: `${getEventId(current)}-${getEventId(
+            next
+          )}`,
+
+          from: getEventId(current),
+
+          to: getEventId(next),
+
+          fromEvent: current,
+
+          toEvent: next,
+
+          durationMinutes: differenceMinutes,
+        });
+      }
+    }
+
+    return gaps;
+  }, [sortedEvents]);
+
+  // =========================================================
+  // SELECTED GAP
+  // =========================================================
+
+  const selectedGapData = useMemo(() => {
+    if (!selectedGap) {
+      return null;
+    }
+
+    const fromId = selectedGap.from;
+    const toId = selectedGap.to;
+
+    const from = sortedEvents.find(
+      (event) => getEventId(event) === fromId
+    );
+
+    const to = sortedEvents.find(
+      (event) => getEventId(event) === toId
+    );
+
+    if (!from || !to) {
+      return null;
+    }
+
+    return {
+      from,
+      to,
+      durationMinutes:
+        selectedGap.durationMinutes,
+    };
+  }, [selectedGap, sortedEvents]);
+
+  // =========================================================
+  // RELATIONSHIP HELPERS
+  // =========================================================
+
+  const relationshipExists = (
+    sourceId,
+    targetId
+  ) => {
+    return relationships.some((relationship) => {
+      const source =
+        relationship.source ||
+        relationship.from ||
+        relationship.source_id;
+
+      const target =
+        relationship.target ||
+        relationship.to ||
+        relationship.target_id;
+
+      return (
+        source === sourceId &&
+        target === targetId
+      );
+    });
+  };
+
+  // =========================================================
+  // CALCULATE SEQUENCE CONFIDENCE
+  // =========================================================
+
+  const sequenceConfidence = useMemo(() => {
+    if (events.length === 0) {
       return 0;
     }
 
-    const candidate =
-      candidates.find(
-        (item) =>
-          getEventId(item) ===
-          getEventId(event)
-      );
-
-    if (candidate) {
-      return candidate.score;
+    if (events.length === 1) {
+      return 100;
     }
 
-    const hasRelationship =
-      relationships.some(
-        (relationship) =>
-          relationship.source ===
-            getEventId(event) ||
-          relationship.target ===
-            getEventId(event)
+    const possibleLinks = events.length - 1;
+
+    let connectedLinks = 0;
+
+    for (let i = 0; i < sortedEvents.length - 1; i++) {
+      const currentId = getEventId(
+        sortedEvents[i]
       );
 
-    return hasRelationship
-      ? 90
-      : 0;
+      const nextId = getEventId(
+        sortedEvents[i + 1]
+      );
+
+      if (
+        relationshipExists(
+          currentId,
+          nextId
+        )
+      ) {
+        connectedLinks++;
+      }
+    }
+
+    // If relationships exist, calculate based on them.
+    // Otherwise use temporal ordering as a fallback.
+
+    if (relationships.length > 0) {
+      const confidence =
+        (connectedLinks / possibleLinks) * 100;
+
+      return Math.max(
+        0,
+        Math.min(100, Math.round(confidence))
+      );
+    }
+
+    return 100;
+  }, [events, sortedEvents, relationships]);
+
+  // =========================================================
+  // TIME WINDOW
+  // =========================================================
+
+  const timeWindow = useMemo(() => {
+    if (sortedEvents.length < 2) {
+      return "0m";
+    }
+
+    const firstTime = new Date(
+      getTimestamp(sortedEvents[0])
+    ).getTime();
+
+    const lastTime = new Date(
+      getTimestamp(
+        sortedEvents[sortedEvents.length - 1]
+      )
+    ).getTime();
+
+    if (
+      Number.isNaN(firstTime) ||
+      Number.isNaN(lastTime)
+    ) {
+      return "0m";
+    }
+
+    const minutes =
+      (lastTime - firstTime) / (1000 * 60);
+
+    if (minutes < 60) {
+      return `${Math.round(minutes)}m`;
+    }
+
+    const hours = minutes / 60;
+
+    return `${hours.toFixed(1)}h`;
+  }, [sortedEvents]);
+
+  // =========================================================
+  // FORMAT TIME
+  // =========================================================
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) {
+      return "--:--";
+    }
+
+    const date = new Date(timestamp);
+
+    if (Number.isNaN(date.getTime())) {
+      return "--:--";
+    }
+
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  };
+
+  // =========================================================
+  // FORMAT DATE
+  // =========================================================
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) {
+      return "";
+    }
+
+    const date = new Date(timestamp);
+
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    return date.toLocaleDateString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  // =========================================================
+  // FORMAT GAP
+  // =========================================================
+
+  const formatGapDuration = (minutes) => {
+    if (!minutes) {
+      return "0m";
+    }
+
+    if (minutes < 60) {
+      return `${Math.round(minutes)}m`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+
+    return `${hours}h ${mins}m`;
+  };
+
+  // =========================================================
+  // LOADING STATE
+  // =========================================================
+
+  if (loading) {
+    return (
+      <div className="investigation-page">
+        <div className="investigation-loading">
+          <div className="loading-dot" />
+
+          <h2>
+            Loading investigation...
+          </h2>
+
+          <p>
+            Reconstructing the incident from
+            ChronoGraph evidence.
+          </p>
+        </div>
+      </div>
+    );
   }
 
+  // =========================================================
+  // ERROR STATE
+  // =========================================================
 
-  /* =======================================================
-     RENDER
-  ======================================================= */
+  if (error) {
+    return (
+      <div className="investigation-page">
+        <div className="investigation-error">
+          <div className="error-icon">
+            !
+          </div>
+
+          <h2>
+            Investigation unavailable
+          </h2>
+
+          <p>{error}</p>
+
+          <button
+            className="retry-button"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================
+  // MAIN UI
+  // =========================================================
 
   return (
-    <main className="page-shell investigation-page">
+    <div className="investigation-page">
 
-      {/* =================================================
+      {/* =====================================================
           HEADER
-      ================================================= */}
+      ===================================================== */}
 
-      <section className="page-header">
+      <section className="investigation-hero">
 
-        <div>
+        <div className="hero-copy">
 
-          <p className="eyebrow">
+          <div className="eyebrow">
             AI INVESTIGATION
-          </p>
+          </div>
 
           <h1>
-            Investigate the sequence.
+            Investigate
+            <br />
+            the
+            <br />
+            sequence.
           </h1>
 
-          <p className="page-description">
+          <p>
             Examine temporal gaps, graph
             relationships and the evidence
             surrounding the incident.
@@ -1533,888 +600,323 @@ export default function Investigation() {
 
         </div>
 
-
-        <div className="graph-status">
-
+        <div className="investigation-status">
           <span className="status-dot" />
 
-          {isLoading
-            ? "ANALYZING EVIDENCE"
-            : error
-              ? "INVESTIGATION DEGRADED"
-              : "INVESTIGATION READY"}
-
+          INVESTIGATION READY
         </div>
 
       </section>
 
+      {/* =====================================================
+          KPI CARDS
+      ===================================================== */}
 
-      {/* =================================================
-          ERROR
-      ================================================= */}
+      <section className="investigation-stats">
 
-      {error && (
-        <section className="panel investigation-error">
+        {/* TOTAL EVENTS */}
 
-          <AlertTriangle size={18} />
+        <div className="investigation-stat-card">
 
-          <div>
-
-            <strong>
-              Investigation data unavailable
-            </strong>
-
-            <p>
-              {error}
-            </p>
-
-          </div>
-
-        </section>
-      )}
-
-
-      {/* =================================================
-          SUMMARY METRICS
-      ================================================= */}
-
-      <section className="metrics">
-
-        <div className="metric-card">
-
-          <span>
+          <div className="stat-label">
             TOTAL EVENTS
-          </span>
-
-          <strong>
-            {events.length}
-          </strong>
-
-          <small>
-            Across {sourceCount} sources
-          </small>
-
-        </div>
-
-
-        <div className="metric-card">
-
-          <span>
-            GRAPH RELATIONSHIPS
-          </span>
-
-          <strong>
-            {realRelationshipCount}
-          </strong>
-
-          <small>
-            Neo4j evidence links
-          </small>
-
-        </div>
-
-
-        <div className="metric-card">
-
-          <span>
-            UNEXPLAINED GAPS
-          </span>
-
-          <strong>
-            {gaps.length}
-          </strong>
-
-          <small>
-            Potential investigation points
-          </small>
-
-        </div>
-
-
-        <div className="metric-card accent">
-
-          <span>
-            SEQUENCE CONFIDENCE
-          </span>
-
-          <strong>
-            {events.length > 0
-              ? `${sequenceConfidence}%`
-              : "—"}
-          </strong>
-
-          <small>
-            Evidence correlation
-          </small>
-
-        </div>
-
-      </section>
-
-
-      {/* =================================================
-          INVESTIGATION WORKSPACE
-      ================================================= */}
-
-      <section className="investigation-grid">
-
-
-        {/* =================================================
-            LEFT SIDE
-        ================================================= */}
-
-        <div className="panel investigation-main">
-
-          <div className="panel-header">
-
-            <div>
-
-              <p className="eyebrow">
-                TEMPORAL EVIDENCE
-              </p>
-
-              <h2>
-                Incident Sequence
-              </h2>
-
-            </div>
-
-
-            <div className="investigation-search">
-
-              <Search size={15} />
-
-              <input
-                type="text"
-                placeholder="Search evidence..."
-                value={searchTerm}
-                onChange={(event) =>
-                  setSearchTerm(
-                    event.target.value
-                  )
-                }
-              />
-
-            </div>
-
           </div>
 
+          <div className="stat-value">
+            {events.length}
+          </div>
 
-          {/* LOADING */}
-
-          {isLoading && (
-            <div className="investigation-loading">
-
-              <div className="inspector-symbol">
-                ◈
-              </div>
-
-              <strong>
-                Loading evidence...
-              </strong>
-
-              <span>
-                ChronoGraph is retrieving
-                events and graph relationships
-                from Neo4j.
-              </span>
-
-            </div>
-          )}
-
-
-          {/* EMPTY */}
-
-          {!isLoading &&
-            !error &&
-            filteredEvents.length === 0 && (
-              <div className="investigation-loading">
-
-                <div className="inspector-symbol">
-                  ◇
-                </div>
-
-                <strong>
-                  No evidence found
-                </strong>
-
-                <span>
-                  No events match the current
-                  search.
-                </span>
-
-              </div>
-            )}
-
-
-          {/* EVENT SEQUENCE */}
-
-          {!isLoading &&
-            filteredEvents.length > 0 && (
-
-              <div className="investigation-sequence">
-
-                {filteredEvents.map(
-                  (event, index) => {
-
-                    const Icon =
-                      getSourceIcon(
-                        event.source
-                      );
-
-                    const eventId =
-                      getEventId(
-                        event
-                      );
-
-                    const isSelected =
-                      selectedEvent &&
-                      getEventId(
-                        selectedEvent
-                      ) === eventId;
-
-
-                    const hasGraphRelationship =
-                      relationships.some(
-                        (relationship) =>
-                          relationship.source ===
-                            eventId ||
-                          relationship.target ===
-                            eventId
-                      );
-
-
-                    return (
-                      <div
-                        className={`investigation-event ${
-                          isSelected
-                            ? "selected"
-                            : ""
-                        }`}
-                        key={
-                          eventId ||
-                          index
-                        }
-                      >
-
-                        {/* TIMELINE */}
-
-                        <div className="sequence-marker">
-
-                          <div className="sequence-line" />
-
-                          <div className="sequence-dot">
-
-                            <Icon size={15} />
-
-                          </div>
-
-                        </div>
-
-
-                        {/* EVENT */}
-
-                        <button
-                          type="button"
-                          className="sequence-event-button"
-                          onClick={() =>
-                            handleSelectEvent(
-                              event
-                            )
-                          }
-                        >
-
-                          <div className="sequence-event-top">
-
-                            <span>
-                              {getEventSource(
-                                event
-                              )}
-                            </span>
-
-                            <span>
-                              {formatTime(
-                                event.timestamp
-                              )}
-                            </span>
-
-                          </div>
-
-
-                          <strong>
-                            {getEventTitle(
-                              event
-                            )}
-                          </strong>
-
-
-                          <small>
-                            {eventId ||
-                              "NO EVENT ID"}
-                          </small>
-
-
-                          {event.description && (
-                            <p>
-                              {event.description}
-                            </p>
-                          )}
-
-
-                          {event.event_type && (
-                            <span className="event-graph-badge">
-
-                              <ShieldCheck
-                                size={11}
-                              />
-
-                              {event.event_type}
-
-                            </span>
-                          )}
-
-
-                          {hasGraphRelationship && (
-                            <span className="event-graph-badge">
-
-                              <GitBranch
-                                size={11}
-                              />
-
-                              GRAPH LINKED
-
-                            </span>
-                          )}
-
-                        </button>
-
-                      </div>
-                    );
-                  }
-                )}
-
-              </div>
-            )}
+          <div className="stat-description">
+            Across {sources.length - 1} sources
+          </div>
 
         </div>
 
+        {/* RELATIONSHIPS */}
 
-        {/* =================================================
-            RIGHT INSPECTOR
-        ================================================= */}
+        <div className="investigation-stat-card">
 
-        <aside className="panel investigation-inspector">
+          <div className="stat-label">
+            GRAPH RELATIONSHIPS
+          </div>
 
-          {selectedEvent ? (
+          <div className="stat-value">
+            {relationships.length}
+          </div>
 
-            <>
+          <div className="stat-description">
+            Neo4j evidence links
+          </div>
 
-              <div className="inspector-top">
+        </div>
 
-                <span className="eyebrow">
-                  SELECTED EVIDENCE
-                </span>
+        {/* GAPS */}
 
-                <button
-                  type="button"
-                  className="close-button"
-                  onClick={
-                    clearSelection
-                  }
-                  aria-label="Close selected evidence"
-                >
-                  <X size={16} />
-                </button>
+        <div className="investigation-stat-card">
 
-              </div>
+          <div className="stat-label">
+            UNEXPLAINED GAPS
+          </div>
 
+          <div className="stat-value">
+            {detectedGaps.length}
+          </div>
 
-              {/* SOURCE */}
+          <div className="stat-description">
+            Potential investigation points
+          </div>
 
-              <div className="selected-source">
+        </div>
 
-                <div className="selected-icon">
+        {/* CONFIDENCE */}
 
-                  {(() => {
+        <div className="investigation-stat-card highlight">
 
-                    const Icon =
-                      getSourceIcon(
-                        selectedEvent.source
-                      );
+          <div className="stat-label">
+            SEQUENCE CONFIDENCE
+          </div>
 
-                    return (
-                      <Icon size={20} />
-                    );
+          <div className="stat-value">
+            {sequenceConfidence}%
+          </div>
 
-                  })()}
+          <div className="stat-description">
+            Evidence correlation
+          </div>
 
-                </div>
-
-
-                <div>
-
-                  <span>
-                    {getEventSource(
-                      selectedEvent
-                    )}
-                  </span>
-
-                  <strong>
-                    {getEventId(
-                      selectedEvent
-                    )}
-                  </strong>
-
-                </div>
-
-              </div>
-
-
-              {/* TITLE */}
-
-              <h2>
-                {getEventTitle(
-                  selectedEvent
-                )}
-              </h2>
-
-
-              {/* DESCRIPTION */}
-
-              <p className="inspector-description">
-
-                {selectedEvent.description ||
-                  "No additional description is available for this evidence event."}
-
-              </p>
-
-
-              {/* DATA */}
-
-              <div className="inspector-data">
-
-                <div>
-
-                  <span>
-                    <Clock3 size={13} />
-                    TIMESTAMP
-                  </span>
-
-                  <strong>
-                    {formatDateTime(
-                      selectedEvent.timestamp
-                    )}
-                  </strong>
-
-                </div>
-
-
-                <div>
-
-                  <span>
-                    <ShieldCheck size={13} />
-                    EVENT TYPE
-                  </span>
-
-                  <strong>
-                    {selectedEvent.event_type ||
-                      "Evidence Event"}
-                  </strong>
-
-                </div>
-
-              </div>
-
-
-              {/* SEQUENCE POSITION */}
-
-              <div className="investigation-detail-card">
-
-                <div className="detail-icon">
-                  <GitBranch size={16} />
-                </div>
-
-                <div>
-
-                  <span>
-                    SEQUENCE POSITION
-                  </span>
-
-                  <strong>
-
-                    {events.findIndex(
-                      (event) =>
-                        getEventId(event) ===
-                        getEventId(
-                          selectedEvent
-                        )
-                    ) + 1}
-
-                    {" / "}
-
-                    {events.length}
-
-                  </strong>
-
-                </div>
-
-              </div>
-
-
-              {/* GRAPH CONNECTIONS */}
-
-              <div className="investigation-detail-card">
-
-                <div className="detail-icon">
-                  <Network size={16} />
-                </div>
-
-                <div>
-
-                  <span>
-                    GRAPH CONNECTIONS
-                  </span>
-
-                  <strong>
-
-                    {
-                      relationships.filter(
-                        (relationship) =>
-                          relationship.source ===
-                            getEventId(
-                              selectedEvent
-                            ) ||
-                          relationship.target ===
-                            getEventId(
-                              selectedEvent
-                            )
-                      ).length
-                    }
-
-                  </strong>
-
-                </div>
-
-              </div>
-
-
-              {/* NEXT GAP */}
-
-              {selectedGap && (
-                <div className="investigation-detail-card">
-
-                  <div className="detail-icon">
-                    <Clock3 size={16} />
-                  </div>
-
-                  <div>
-
-                    <span>
-                      NEXT EVENT GAP
-                    </span>
-
-                    <strong>
-                      {selectedGap.minutes} minutes
-                    </strong>
-
-                  </div>
-
-                </div>
-              )}
-
-
-              {/* EVIDENCE RELEVANCE */}
-
-              <div className="evidence-confidence">
-
-                <div>
-
-                  <span>
-                    EVIDENCE RELEVANCE
-                  </span>
-
-                  <strong>
-                    {getEventRelevance(
-                      selectedEvent
-                    ) > 0
-                      ? `${getEventRelevance(
-                          selectedEvent
-                        )}%`
-                      : "—"}
-                  </strong>
-
-                </div>
-
-
-                <div className="confidence-bar">
-
-                  <div
-                    style={{
-                      width: `${getEventRelevance(
-                        selectedEvent
-                      )}%`,
-                    }}
-                  />
-
-                </div>
-
-              </div>
-
-
-              {/* RETURN */}
-
-              <button
-                type="button"
-                className="trace-button"
-                onClick={
-                  clearSelection
-                }
-              >
-
-                Return to sequence
-
-                <ArrowRight size={15} />
-
-              </button>
-
-            </>
-
-          ) : (
-
-            <>
-
-              <p className="eyebrow">
-                GRAPH INTELLIGENCE
-              </p>
-
-
-              <div className="inspector-symbol">
-                ◈
-              </div>
-
-
-              <h2>
-                Investigate the
-                <br />
-                evidence sequence.
-              </h2>
-
-
-              <p>
-                Select an event to inspect
-                its source, timestamp, graph
-                connections and position in
-                the incident sequence.
-              </p>
-
-
-              <div className="graph-summary">
-
-                <div>
-
-                  <strong>
-                    {events.length}
-                  </strong>
-
-                  <span>
-                    EVENTS
-                  </span>
-
-                </div>
-
-
-                <div>
-
-                  <strong>
-                    {realRelationshipCount}
-                  </strong>
-
-                  <span>
-                    GRAPH LINKS
-                  </span>
-
-                </div>
-
-
-                <div>
-
-                  <strong>
-                    {gaps.length}
-                  </strong>
-
-                  <span>
-                    GAPS
-                  </span>
-
-                </div>
-
-              </div>
-
-            </>
-
-          )}
-
-        </aside>
+        </div>
 
       </section>
 
+      {/* =====================================================
+          EVIDENCE FILTER
+      ===================================================== */}
 
-      {/* =================================================
-          TEMPORAL GAP ANALYSIS
-      ================================================= */}
+      <section className="evidence-filter-section">
 
-      <section className="panel temporal-analysis">
+        <div>
+          <div className="section-eyebrow">
+            EVIDENCE FILTER
+          </div>
+
+          <h2>
+            Filter investigation evidence
+          </h2>
+        </div>
+
+        <select
+          value={sourceFilter}
+          onChange={(event) =>
+            setSourceFilter(event.target.value)
+          }
+          className="source-select"
+        >
+          {sources.map((source) => (
+            <option
+              key={source}
+              value={source}
+            >
+              {source}
+            </option>
+          ))}
+        </select>
+
+      </section>
+
+      {/* =====================================================
+          TEMPORAL EVIDENCE
+      ===================================================== */}
+
+      <section className="investigation-panel">
 
         <div className="panel-header">
 
           <div>
-
-            <p className="eyebrow">
-              TEMPORAL ANALYSIS
-            </p>
+            <div className="section-eyebrow">
+              TEMPORAL EVIDENCE
+            </div>
 
             <h2>
-              Unexplained Transitions
+              Incident sequence
             </h2>
-
           </div>
 
-
-          <div className="analysis-status">
-
-            <CheckCircle2 size={15} />
-
-            AUTOMATED ANALYSIS
-
+          <div className="time-window">
+            {timeWindow}
           </div>
 
         </div>
 
+        {/* EMPTY */}
 
-        {gaps.length === 0 ? (
+        {filteredEvents.length === 0 ? (
+          <div className="empty-state">
 
-          <div className="no-gaps">
+            <h3>
+              No investigation evidence
+            </h3>
 
-            <CheckCircle2 size={20} />
-
-            <div>
-
-              <strong>
-                No significant temporal gaps detected.
-              </strong>
-
-              <span>
-                The current event sequence appears
-                continuous.
-              </span>
-
-            </div>
+            <p>
+              No events were returned from
+              the selected source.
+            </p>
 
           </div>
-
         ) : (
 
-          <div className="gap-list">
+          <div className="timeline">
 
-            {gaps.map(
-              (gap, index) => (
+            {filteredEvents.map(
+              (event, index) => {
 
-                <button
-                  type="button"
-                  className={`gap-card ${
-                    selectedGap?.id ===
-                    gap.id
-                      ? "selected"
-                      : ""
-                  }`}
-                  key={gap.id}
-                  onClick={() =>
-                    setSelectedEvent(
-                      gap.from
-                    )
-                  }
-                >
+                const eventId =
+                  getEventId(event);
 
-                  <div className="gap-index">
+                const selected =
+                  selectedEvent &&
+                  getEventId(selectedEvent) ===
+                    eventId;
 
-                    {String(
-                      index + 1
-                    ).padStart(
-                      2,
-                      "0"
+                return (
+                  <React.Fragment key={eventId || index}>
+
+                    {/* EVENT */}
+
+                    <div
+                      className={`timeline-event ${
+                        selected
+                          ? "selected"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        setSelectedEvent(event)
+                      }
+                    >
+
+                      <div className="timeline-marker">
+                        <span />
+                      </div>
+
+                      <div className="timeline-time">
+                        {formatTime(
+                          getTimestamp(event)
+                        )}
+                      </div>
+
+                      <div className="timeline-content">
+
+                        <div className="event-source">
+                          {getSource(event)}
+                        </div>
+
+                        <h3>
+                          {getTitle(event)}
+                        </h3>
+
+                        <p>
+                          {getDescription(event)}
+                        </p>
+
+                        <div className="event-id">
+                          {eventId}
+                        </div>
+
+                      </div>
+
+                    </div>
+
+                    {/* GAP */}
+
+                    {index <
+                      filteredEvents.length - 1 && (
+                      <div className="timeline-gap">
+
+                        {(() => {
+
+                          const nextEvent =
+                            filteredEvents[
+                              index + 1
+                            ];
+
+                          const currentTime =
+                            new Date(
+                              getTimestamp(event)
+                            ).getTime();
+
+                          const nextTime =
+                            new Date(
+                              getTimestamp(
+                                nextEvent
+                              )
+                            ).getTime();
+
+                          const gapMinutes =
+                            (nextTime -
+                              currentTime) /
+                            (1000 * 60);
+
+                          const gapObject =
+                            detectedGaps.find(
+                              (gap) =>
+                                gap.from ===
+                                  eventId &&
+                                gap.to ===
+                                  getEventId(
+                                    nextEvent
+                                  )
+                            );
+
+                          if (
+                            gapMinutes > 15
+                          ) {
+                            return (
+                              <button
+                                className="gap-card"
+                                onClick={() =>
+                                  setSelectedGap(
+                                    gapObject || {
+                                      from: eventId,
+                                      to: getEventId(
+                                        nextEvent
+                                      ),
+                                      durationMinutes:
+                                        gapMinutes,
+                                    }
+                                  )
+                                }
+                              >
+
+                                <span className="gap-line" />
+
+                                <span className="gap-text">
+                                  {formatGapDuration(
+                                    gapMinutes
+                                  )}{" "}
+                                  temporal gap
+                                </span>
+
+                                <span className="gap-arrow">
+                                  →
+                                </span>
+
+                              </button>
+                            );
+                          }
+
+                          return (
+                            <div className="normal-connection">
+                              <span />
+                            </div>
+                          );
+
+                        })()}
+
+                      </div>
                     )}
 
-                  </div>
-
-
-                  <div className="gap-events">
-
-                    <span>
-                      {getEventSource(
-                        gap.from
-                      )}
-                    </span>
-
-                    <strong>
-                      {getEventTitle(
-                        gap.from
-                      )}
-                    </strong>
-
-                    <small>
-                      {formatTime(
-                        gap.from.timestamp
-                      )}
-                    </small>
-
-                  </div>
-
-
-                  <div className="gap-duration">
-
-                    <Clock3 size={14} />
-
-                    <strong>
-                      {gap.minutes}
-                    </strong>
-
-                    <span>
-                      MIN
-                    </span>
-
-                  </div>
-
-
-                  <ArrowRight
-                    size={16}
-                  />
-
-
-                  <div className="gap-events">
-
-                    <span>
-                      {getEventSource(
-                        gap.to
-                      )}
-                    </span>
-
-                    <strong>
-                      {getEventTitle(
-                        gap.to
-                      )}
-                    </strong>
-
-                    <small>
-                      {formatTime(
-                        gap.to.timestamp
-                      )}
-                    </small>
-
-                  </div>
-
-                </button>
-
-              )
+                  </React.Fragment>
+                );
+              }
             )}
 
           </div>
@@ -2423,305 +925,403 @@ export default function Investigation() {
 
       </section>
 
+      {/* =====================================================
+          SELECTED EVENT
+      ===================================================== */}
 
-      {/* =================================================
-          EVIDENCE MAP
-      ================================================= */}
+      {selectedEvent && (
 
-      {selectedGap && (
+        <section className="investigation-panel selected-event-panel">
 
-        <EvidenceMap
-          events={events}
-          gap={selectedGap}
-          candidates={candidates}
-        />
-
-      )}
-
-
-      {/* =================================================
-          ROOT CAUSE PATH
-      ================================================= */}
-
-      {events.length > 0 && (
-
-        <RootCausePath
-          events={
-            rootCauseEvents
-          }
-        />
-
-      )}
-
-
-      {/* =================================================
-          INCIDENT REPLAY
-      ================================================= */}
-
-      {events.length > 0 && (
-
-        <IncidentReplay
-          events={events}
-        />
-
-      )}
-
-
-      {/* =================================================
-          AI INVESTIGATION VERDICT
-      ================================================= */}
-
-      {events.length > 0 && (
-
-        <section className="investigation-verdict">
-
-          <div className="verdict-header">
+          <div className="panel-header">
 
             <div>
-
-              <p className="eyebrow">
-                INVESTIGATION VERDICT
-              </p>
+              <div className="section-eyebrow">
+                SELECTED EVIDENCE
+              </div>
 
               <h2>
-                {hypothesis?.title ||
-                  "Evidence reconstruction"}
+                {getTitle(selectedEvent)}
               </h2>
-
             </div>
 
-
-            <div className="verdict-confidence">
-
-              <strong>
-                {sequenceConfidence}%
-              </strong>
-
-              <span>
-                CONFIDENCE
-              </span>
-
-            </div>
+            <button
+              className="close-button"
+              onClick={() =>
+                setSelectedEvent(null)
+              }
+            >
+              ×
+            </button>
 
           </div>
 
+          <div className="selected-event-grid">
 
-          <div className="verdict-body">
-
-            {/* TEMPORAL */}
-
-            <div className="verdict-item">
-
-              <span>
-                TEMPORAL EVIDENCE
+            <div>
+              <span className="detail-label">
+                EVENT ID
               </span>
 
               <strong>
-
-                {gaps.length > 0
-                  ? `${gaps.length} unexplained transition${
-                      gaps.length > 1
-                        ? "s"
-                        : ""
-                    } detected`
-                  : "No major temporal gaps"}
-
+                {getEventId(selectedEvent)}
               </strong>
-
             </div>
 
-
-            {/* GRAPH */}
-
-            <div className="verdict-item">
-
-              <span>
-                GRAPH EVIDENCE
+            <div>
+              <span className="detail-label">
+                SOURCE
               </span>
 
               <strong>
-
-                {realRelationshipCount > 0
-                  ? `${realRelationshipCount} Neo4j relationship${
-                      realRelationshipCount > 1
-                        ? "s"
-                        : ""
-                    } available`
-                  : "No explicit graph relationships found"}
-
+                {getSource(selectedEvent)}
               </strong>
-
             </div>
 
-
-            {/* STRONGEST */}
-
-            <div className="verdict-item">
-
-              <span>
-                STRONGEST SIGNAL
+            <div>
+              <span className="detail-label">
+                TIMESTAMP
               </span>
 
               <strong>
-
-                {candidates[0]
-                  ? `${getEventTitle(
-                      candidates[0]
-                    )} · ${
-                      candidates[0].score
-                    }%`
-                  : "No supporting candidate"}
-
+                {formatDate(
+                  getTimestamp(selectedEvent)
+                )}{" "}
+                {formatTime(
+                  getTimestamp(selectedEvent)
+                )}
               </strong>
+            </div>
 
+            <div className="full-detail">
+              <span className="detail-label">
+                DESCRIPTION
+              </span>
+
+              <p>
+                {getDescription(selectedEvent)}
+              </p>
             </div>
 
           </div>
-
-
-          {/* EXPLANATION */}
-
-          <div className="verdict-note">
-
-            <Sparkles size={16} />
-
-            <span>
-
-              {hypothesis?.explanation ||
-                "No explanation is currently available."}
-
-            </span>
-
-          </div>
-
-
-          {/* SIGNALS */}
-
-          {hypothesis?.signals?.length >
-            0 && (
-
-            <div className="verdict-signals">
-
-              {hypothesis.signals.map(
-                (
-                  signal,
-                  index
-                ) => (
-
-                  <span
-                    key={`${signal}-${index}`}
-                  >
-                    {signal}
-                  </span>
-
-                )
-              )}
-
-            </div>
-
-          )}
 
         </section>
 
       )}
 
+      {/* =====================================================
+          SELECTED GAP
+      ===================================================== */}
 
-      {/* =================================================
-          MISSING EVIDENCE
-      ================================================= */}
+      {selectedGapData && (
 
-      <MissingEvidence
-        events={events}
-      />
+        <section className="investigation-panel gap-investigation-panel">
 
+          <div className="panel-header">
 
-      {/* =================================================
-          AI RECONSTRUCTION
-      ================================================= */}
+            <div>
+              <div className="section-eyebrow">
+                INVESTIGATION POINT
+              </div>
 
-      <section className="panel ai-reconstruction">
+              <h2>
+                Investigate temporal gap
+              </h2>
+            </div>
 
-        <div className="ai-reconstruction-symbol">
-
-          <Sparkles size={20} />
-
-        </div>
-
-
-        <div className="ai-reconstruction-content">
-
-          <p className="eyebrow">
-            AI RECONSTRUCTION
-          </p>
-
-
-          <h2>
-            {hypothesis?.title ||
-              "Reconstructing incident sequence"}
-          </h2>
-
-
-          <p>
-
-            ChronoGraph has organized{" "}
-
-            <strong>
-              {events.length}
-            </strong>{" "}
-
-            evidence events into a temporal
-            sequence across{" "}
-
-            <strong>
-              {sourceCount}
-            </strong>{" "}
-
-            independent sources with{" "}
-
-            <strong>
-              {realRelationshipCount}
-            </strong>{" "}
-
-            explicit graph relationships.
-
-          </p>
-
-        </div>
-
-
-        <div className="ai-confidence">
-
-          <span>
-            SEQUENCE CONFIDENCE
-          </span>
-
-
-          <strong>
-
-            {events.length > 0
-              ? `${sequenceConfidence}%`
-              : "—"}
-
-          </strong>
-
-
-          <div className="confidence-bar">
-
-            <div
-              style={{
-                width:
-                  events.length > 0
-                    ? `${sequenceConfidence}%`
-                    : "0%",
-              }}
-            />
+            <button
+              className="close-button"
+              onClick={() =>
+                setSelectedGap(null)
+              }
+            >
+              ×
+            </button>
 
           </div>
+
+          <div className="gap-investigation">
+
+            <div className="gap-event">
+
+              <span className="detail-label">
+                BEFORE GAP
+              </span>
+
+              <h3>
+                {getTitle(
+                  selectedGapData.from
+                )}
+              </h3>
+
+              <p>
+                {formatTime(
+                  getTimestamp(
+                    selectedGapData.from
+                  )
+                )}
+              </p>
+
+            </div>
+
+            <div className="gap-duration">
+
+              <div className="gap-warning">
+                !
+              </div>
+
+              <strong>
+                {formatGapDuration(
+                  selectedGapData.durationMinutes
+                )}
+              </strong>
+
+              <span>
+                unexplained interval
+              </span>
+
+            </div>
+
+            <div className="gap-event">
+
+              <span className="detail-label">
+                AFTER GAP
+              </span>
+
+              <h3>
+                {getTitle(
+                  selectedGapData.to
+                )}
+              </h3>
+
+              <p>
+                {formatTime(
+                  getTimestamp(
+                    selectedGapData.to
+                  )
+                )}
+              </p>
+
+            </div>
+
+          </div>
+
+          <div className="investigation-note">
+
+            <span className="note-icon">
+              i
+            </span>
+
+            <p>
+              This interval represents a
+              temporal point where additional
+              evidence may be required to
+              explain how the incident progressed.
+            </p>
+
+          </div>
+
+        </section>
+
+      )}
+
+      {/* =====================================================
+          GRAPH RELATIONSHIPS
+      ===================================================== */}
+
+      <section className="investigation-panel">
+
+        <div className="panel-header">
+
+          <div>
+            <div className="section-eyebrow">
+              GRAPH EVIDENCE
+            </div>
+
+            <h2>
+              Neo4j relationships
+            </h2>
+          </div>
+
+          <div className="relationship-count">
+            {relationships.length} LINKS
+          </div>
+
+        </div>
+
+        {relationships.length === 0 ? (
+
+          <div className="empty-state">
+
+            <h3>
+              No graph relationships
+            </h3>
+
+            <p>
+              ChronoGraph did not return any
+              Neo4j relationships for this case.
+            </p>
+
+          </div>
+
+        ) : (
+
+          <div className="relationship-list">
+
+            {relationships.map(
+              (relationship, index) => {
+
+                const source =
+                  relationship.source ||
+                  relationship.from ||
+                  relationship.source_id ||
+                  "Unknown";
+
+                const target =
+                  relationship.target ||
+                  relationship.to ||
+                  relationship.target_id ||
+                  "Unknown";
+
+                const type =
+                  relationship.relationship ||
+                  relationship.type ||
+                  relationship.relation ||
+                  "RELATED_TO";
+
+                const sourceEvent =
+                  events.find(
+                    (event) =>
+                      getEventId(event) ===
+                      source
+                  );
+
+                const targetEvent =
+                  events.find(
+                    (event) =>
+                      getEventId(event) ===
+                      target
+                  );
+
+                return (
+                  <div
+                    className="relationship-row"
+                    key={`${source}-${target}-${index}`}
+                  >
+
+                    <div className="relationship-node">
+
+                      <span className="node-id">
+                        {source}
+                      </span>
+
+                      <strong>
+                        {sourceEvent
+                          ? getTitle(
+                              sourceEvent
+                            )
+                          : source}
+                      </strong>
+
+                    </div>
+
+                    <div className="relationship-type">
+
+                      <span className="relationship-line" />
+
+                      <span>
+                        {type}
+                      </span>
+
+                      <span className="relationship-arrow">
+                        →
+                      </span>
+
+                    </div>
+
+                    <div className="relationship-node">
+
+                      <span className="node-id">
+                        {target}
+                      </span>
+
+                      <strong>
+                        {targetEvent
+                          ? getTitle(
+                              targetEvent
+                            )
+                          : target}
+                      </strong>
+
+                    </div>
+
+                  </div>
+                );
+              }
+            )}
+
+          </div>
+
+        )}
+
+      </section>
+
+      {/* =====================================================
+          FOOTER SUMMARY
+      ===================================================== */}
+
+      <section className="investigation-summary">
+
+        <div className="summary-item">
+
+          <span className="summary-number">
+            {events.length}
+          </span>
+
+          <span>
+            EVENTS
+          </span>
+
+        </div>
+
+        <div className="summary-item">
+
+          <span className="summary-number">
+            {relationships.length}
+          </span>
+
+          <span>
+            GRAPH LINKS
+          </span>
+
+        </div>
+
+        <div className="summary-item">
+
+          <span className="summary-number">
+            {detectedGaps.length}
+          </span>
+
+          <span>
+            GAPS
+          </span>
+
+        </div>
+
+        <div className="summary-item">
+
+          <span className="summary-number">
+            {sequenceConfidence}%
+          </span>
+
+          <span>
+            CONFIDENCE
+          </span>
 
         </div>
 
       </section>
 
-    </main>
+    </div>
   );
 }
