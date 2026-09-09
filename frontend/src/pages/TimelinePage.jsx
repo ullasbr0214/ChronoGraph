@@ -1,12 +1,17 @@
-import { useEffect, useState } from "react";
-
+import { useEffect, useMemo, useState } from "react";
 import {
   MessageSquare,
   GitBranch,
   Mail,
   ArrowRight,
   Zap,
+  Shield,
+  Network,
+  Server,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import { getEvents } from "../services/api";
 
@@ -14,12 +19,22 @@ const sourceIcons = {
   Slack: MessageSquare,
   GitHub: GitBranch,
   Email: Mail,
+  "System Log": Server,
+  "Security Log": Shield,
+  "Network Log": Network,
+  "Application Log": Server,
 };
 
 function formatTime(timestamp) {
   if (!timestamp) return "--:--";
 
-  return new Date(timestamp).toLocaleTimeString([], {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -28,7 +43,13 @@ function formatTime(timestamp) {
 function formatDate(timestamp) {
   if (!timestamp) return "--";
 
-  return new Date(timestamp).toLocaleDateString([], {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "--";
+  }
+
+  return date.toLocaleDateString([], {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -36,46 +57,94 @@ function formatDate(timestamp) {
 }
 
 export default function TimelinePage() {
+  const navigate = useNavigate();
+
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Load events from backend
-  useEffect(() => {
-    async function loadEvents() {
-      try {
-        setLoading(true);
-        setError("");
+  // ---------------------------------------------------------
+  // Load events from Neo4j through FastAPI
+  // ---------------------------------------------------------
 
-        const data = await getEvents();
+  async function loadEvents() {
+    try {
+      setLoading(true);
+      setError("");
 
-        console.log("Events received from backend:", data);
+      const data = await getEvents();
 
-        // Backend response should contain events
-        setEvents(data.events || []);
-      } catch (err) {
-        console.error("Failed to load events:", err);
-        setError(err.message || "Failed to load events");
-      } finally {
-        setLoading(false);
+      console.log("ChronoGraph events received:", data);
+
+      if (!data || !Array.isArray(data.events)) {
+        throw new Error("Invalid event data received from backend");
       }
-    }
 
+      setEvents(data.events);
+    } catch (err) {
+      console.error("Failed to load ChronoGraph events:", err);
+
+      setError(
+        err?.message ||
+          "Unable to connect to the ChronoGraph backend."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
     loadEvents();
   }, []);
 
-  const sortedEvents = [...events].sort(
-    (a, b) =>
-      new Date(a.timestamp) - new Date(b.timestamp)
-  );
+  // ---------------------------------------------------------
+  // Sort events chronologically
+  // ---------------------------------------------------------
+
+  const sortedEvents = useMemo(() => {
+    return [...events].sort((a, b) => {
+      return (
+        new Date(a.timestamp).getTime() -
+        new Date(b.timestamp).getTime()
+      );
+    });
+  }, [events]);
 
   const firstEvent = sortedEvents[0];
   const lastEvent = sortedEvents[sortedEvents.length - 1];
 
+  // ---------------------------------------------------------
+  // Navigate to investigation
+  // ---------------------------------------------------------
+
+  function inspectEvent(event) {
+    if (!event?.id) {
+      console.warn("Cannot inspect event without an ID:", event);
+      return;
+    }
+
+    navigate(
+      `/investigation?event=${encodeURIComponent(event.id)}`
+    );
+  }
+
+  function openInvestigation() {
+    if (firstEvent?.id) {
+      navigate(
+        `/investigation?event=${encodeURIComponent(firstEvent.id)}`
+      );
+    } else {
+      navigate("/investigation");
+    }
+  }
+
   return (
     <main className="timeline-page">
 
-      {/* HEADER */}
+      {/* =====================================================
+          HEADER
+      ===================================================== */}
+
       <section className="page-header timeline-header">
 
         <div>
@@ -101,7 +170,10 @@ export default function TimelinePage() {
       </section>
 
 
-      {/* TIMELINE SUMMARY */}
+      {/* =====================================================
+          TIMELINE SUMMARY
+      ===================================================== */}
+
       <section className="timeline-summary">
 
         <div className="timeline-stat">
@@ -182,12 +254,20 @@ export default function TimelinePage() {
       </section>
 
 
-      {/* MAIN TIMELINE */}
+      {/* =====================================================
+          MAIN TIMELINE WORKSPACE
+      ===================================================== */}
+
       <section className="timeline-workspace">
+
+        {/* ===================================================
+            TIMELINE PANEL
+        =================================================== */}
 
         <div className="timeline-panel">
 
           {/* PANEL HEADER */}
+
           <div className="timeline-panel-header">
 
             <div>
@@ -217,21 +297,38 @@ export default function TimelinePage() {
           </div>
 
 
-          {/* LOADING */}
+          {/* =================================================
+              LOADING
+          ================================================= */}
+
           {loading && (
             <div className="timeline-empty">
+
+              <RefreshCw
+                size={22}
+                className="loading-icon"
+              />
 
               <p>
                 Loading events from Neo4j...
               </p>
 
+              <small>
+                ChronoGraph is retrieving the latest event sequence.
+              </small>
+
             </div>
           )}
 
 
-          {/* ERROR */}
+          {/* =================================================
+              ERROR
+          ================================================= */}
+
           {!loading && error && (
             <div className="timeline-empty">
+
+              <AlertCircle size={24} />
 
               <p>
                 Failed to load events.
@@ -241,25 +338,47 @@ export default function TimelinePage() {
                 {error}
               </small>
 
+              <button
+                type="button"
+                className="timeline-retry-button"
+                onClick={loadEvents}
+              >
+                <RefreshCw size={15} />
+                Retry connection
+              </button>
+
             </div>
           )}
 
 
-          {/* NO EVENTS */}
+          {/* =================================================
+              NO EVENTS
+          ================================================= */}
+
           {!loading &&
             !error &&
             sortedEvents.length === 0 && (
               <div className="timeline-empty">
 
+                <Zap size={24} />
+
                 <p>
                   No events found in Neo4j.
                 </p>
+
+                <small>
+                  Create or import events to build the incident
+                  timeline.
+                </small>
 
               </div>
             )}
 
 
-          {/* TIMELINE */}
+          {/* =================================================
+              TIMELINE
+          ================================================= */}
+
           {!loading &&
             !error &&
             sortedEvents.length > 0 && (
@@ -275,10 +394,13 @@ export default function TimelinePage() {
 
                     <div
                       className="timeline-event"
-                      key={event.id}
+                      key={event.id || `event-${index}`}
                     >
 
-                      {/* TIME */}
+                      {/* =====================================
+                          TIME
+                      ===================================== */}
+
                       <div className="timeline-time">
 
                         <strong>
@@ -292,7 +414,10 @@ export default function TimelinePage() {
                       </div>
 
 
-                      {/* LINE + NODE */}
+                      {/* =====================================
+                          LINE + NODE
+                      ===================================== */}
+
                       <div className="timeline-marker">
 
                         <div className="timeline-node">
@@ -309,7 +434,10 @@ export default function TimelinePage() {
                       </div>
 
 
-                      {/* EVENT CARD */}
+                      {/* =====================================
+                          EVENT CARD
+                      ===================================== */}
+
                       <div className="timeline-card">
 
                         <div className="timeline-card-top">
@@ -319,13 +447,13 @@ export default function TimelinePage() {
                             <Icon size={14} />
 
                             <span>
-                              {event.source || "Unknown"}
+                              {event.source || "Unknown Source"}
                             </span>
 
                           </div>
 
                           <span className="event-id">
-                            {event.id}
+                            {event.id || "UNKNOWN"}
                           </span>
 
                         </div>
@@ -349,25 +477,28 @@ export default function TimelinePage() {
                           </span>
 
                           <button
-  onClick={() =>
-    window.location.href = `/investigation?event=${event.event_id}`
-  }
->
-  Inspect
-  <ArrowRight size={14} />
-</button>
+                            type="button"
+                            onClick={() =>
+                              inspectEvent(event)
+                            }
+                          >
+                            Inspect
+                            <ArrowRight size={14} />
+                          </button>
 
                         </div>
 
                       </div>
 
                     </div>
-
                   );
                 })}
 
 
-                {/* AI INFERENCE */}
+                {/* ===========================================
+                    AI INFERENCE
+                =========================================== */}
+
                 <div className="ai-inference">
 
                   <div className="ai-inference-icon">
@@ -413,13 +544,15 @@ export default function TimelinePage() {
                 </div>
 
               </div>
-
             )}
 
         </div>
 
 
-        {/* RIGHT INSIGHT PANEL */}
+        {/* ===================================================
+            RIGHT INSIGHT PANEL
+        =================================================== */}
+
         <aside className="timeline-insight">
 
           <p className="eyebrow">
@@ -452,16 +585,23 @@ export default function TimelinePage() {
           </p>
 
 
+          {/* =================================================
+              SEQUENCE FLOW
+          ================================================= */}
+
           <div className="sequence-flow">
 
-            {sortedEvents.slice(0, 3).map(
+            {sortedEvents.slice(0, 4).map(
               (event, index) => {
 
-                const Icon =
-                  sourceIcons[event.source] || Zap;
-
                 return (
-                  <div key={event.id}>
+
+                  <button
+                    type="button"
+                    className="sequence-flow-item"
+                    key={event.id || `sequence-${index}`}
+                    onClick={() => inspectEvent(event)}
+                  >
 
                     <span>
                       {String(index + 1).padStart(2, "0")}
@@ -475,7 +615,7 @@ export default function TimelinePage() {
                       {event.source || "Unknown"}
                     </small>
 
-                  </div>
+                  </button>
                 );
               }
             )}
@@ -483,7 +623,10 @@ export default function TimelinePage() {
           </div>
 
 
-          {/* CONFIDENCE */}
+          {/* =================================================
+              CONFIDENCE
+          ================================================= */}
+
           <div className="confidence-box">
 
             <div>
@@ -512,7 +655,15 @@ export default function TimelinePage() {
           </div>
 
 
-          <button className="investigate-button">
+          {/* =================================================
+              INVESTIGATION BUTTON
+          ================================================= */}
+
+          <button
+            type="button"
+            className="investigate-button"
+            onClick={openInvestigation}
+          >
 
             Open investigation
 

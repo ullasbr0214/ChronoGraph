@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   AlertTriangle,
@@ -21,60 +21,237 @@ import { getEvents } from "../services/api";
 import { generateHypothesis } from "../utils/investigationEngine";
 
 
+/* =========================================================
+   SOURCE ICONS
+========================================================= */
+
 const sourceIcons = {
   Slack: MessageSquare,
   GitHub: GitBranch,
   Email: Mail,
+
+  "System Log": ShieldCheck,
+  "Security Log": ShieldCheck,
+  "Network Log": GitBranch,
+  "Application Log": ShieldCheck,
 };
 
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function getEventId(event) {
+  return event?.id || event?.event_id || "";
+}
+
+
+function getEventTitle(event) {
+  return (
+    event?.title ||
+    event?.name ||
+    "Unknown Event"
+  );
+}
+
+
+function getEventSource(event) {
+  return event?.source || "System";
+}
+
+
+function getEventDescription(event) {
+  return (
+    event?.description ||
+    "No additional description is available for this event."
+  );
+}
+
+
+function getEventType(event) {
+  return (
+    event?.event_type ||
+    event?.type ||
+    "Evidence Event"
+  );
+}
+
+
+function safeDate(timestamp) {
+  const date = new Date(timestamp);
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
+}
+
+
+function formatTime(timestamp) {
+  const date = safeDate(timestamp);
+
+  if (!date) {
+    return "Unknown time";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+
+function formatDate(timestamp) {
+  const date = safeDate(timestamp);
+
+  if (!date) {
+    return "Unknown date";
+  }
+
+  return date.toLocaleDateString([], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+
+/* =========================================================
+   COMPONENT
+========================================================= */
 
 export default function Investigation() {
 
   const location = useLocation();
-const navigate = useNavigate();
 
-const gap = location.state?.gap;
+  const navigate = useNavigate();
 
-const [events, setEvents] = useState([]);
-const [isLoadingEvents, setIsLoadingEvents] = useState(true);
-const [eventsError, setEventsError] = useState("");
 
-const [isAnalyzing, setIsAnalyzing] = useState(true);
+  /* =======================================================
+     INVESTIGATION CONTEXT
+  ======================================================= */
+
+  const gap = location.state?.gap;
+
+
+  /* =======================================================
+     STATE
+  ======================================================= */
+
+  const [events, setEvents] = useState([]);
+
+  const [isLoadingEvents, setIsLoadingEvents] =
+    useState(true);
+
+  const [eventsError, setEventsError] =
+    useState("");
+
+  const [isAnalyzing, setIsAnalyzing] =
+    useState(true);
+
+
+  /* =======================================================
+     LOAD EVENTS FROM BACKEND
+  ======================================================= */
 
   useEffect(() => {
-  async function loadEvents() {
-    try {
-      setIsLoadingEvents(true);
-      setEventsError("");
 
-      const response = await getEvents();
+    let mounted = true;
 
-      console.log("Investigation events:", response);
 
-      setEvents(
-  Array.isArray(response)
-    ? response
-    : response.events || []
-);
-    } catch (error) {
-      console.error("Failed to load investigation events:", error);
+    async function loadEvents() {
 
-      setEventsError(
-        error.message || "Failed to load investigation events"
-      );
-    } finally {
-      setIsLoadingEvents(false);
+      try {
+
+        setIsLoadingEvents(true);
+
+        setEventsError("");
+
+
+        const response = await getEvents();
+
+
+        console.log(
+          "INVESTIGATION BACKEND RESPONSE:",
+          JSON.stringify(response, null, 2)
+        );
+
+
+        const backendEvents =
+          Array.isArray(response)
+            ? response
+            : response?.events || [];
+
+
+        if (!mounted) {
+          return;
+        }
+
+
+        setEvents(backendEvents);
+
+      } catch (error) {
+
+        console.error(
+          "Failed to load investigation events:",
+          error
+        );
+
+
+        if (mounted) {
+
+          setEventsError(
+            error?.message ||
+            "Failed to load investigation events"
+          );
+
+        }
+
+      } finally {
+
+        if (mounted) {
+          setIsLoadingEvents(false);
+        }
+
+      }
+
     }
-  }
 
-  loadEvents();
-}, []);
 
-  /*
-   * =====================================================
-   * NO GAP SELECTED
-   * =====================================================
-   */
+    loadEvents();
+
+
+    return () => {
+      mounted = false;
+    };
+
+  }, []);
+
+
+  /* =======================================================
+     FINISH ANALYSIS
+  ======================================================= */
+
+  useEffect(() => {
+
+    if (!isLoadingEvents) {
+
+      const timer = setTimeout(() => {
+
+        setIsAnalyzing(false);
+
+      }, 700);
+
+
+      return () => clearTimeout(timer);
+
+    }
+
+  }, [isLoadingEvents]);
+
+
+  /* =======================================================
+     NO GAP SELECTED
+  ======================================================= */
 
   if (!gap) {
 
@@ -86,18 +263,22 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
           <AlertTriangle size={28} />
 
+
           <p className="eyebrow">
             NO INVESTIGATION CONTEXT
           </p>
+
 
           <h1>
             No evidence gap selected.
           </h1>
 
+
           <p>
-            Select an unexplained transition from the dashboard
-            to begin a temporal investigation.
+            Select an unexplained transition from the
+            dashboard to begin a temporal investigation.
           </p>
+
 
           <button
             className="trace-button"
@@ -115,203 +296,316 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
       </main>
 
     );
+
   }
 
 
-  /*
-   * =====================================================
-   * TIME INFORMATION
-   * =====================================================
-   */
+  /* =======================================================
+     GAP EVENT SAFETY
+  ======================================================= */
 
-  const fromTime = new Date(gap.from.timestamp);
+  const gapFrom = gap.from || {};
 
-  const toTime = new Date(gap.to.timestamp);
+  const gapTo = gap.to || {};
 
 
-  /*
-   * =====================================================
-   * FIND SUPPORTING EVENTS
-   * =====================================================
-   */
+  const fromId =
+    getEventId(gapFrom);
 
-  const candidates = events
 
-    .filter(
-      (event) =>
-        event.event_id !== gap.from.event_id &&
-        event.event_id !== gap.to.event_id
-    )
+  const toId =
+    getEventId(gapTo);
 
-    .map((event) => {
 
-      const eventTime = new Date(event.timestamp);
+  const fromTime =
+    safeDate(gapFrom.timestamp);
 
-      const distanceFromStart =
-        Math.abs(eventTime - fromTime) / 60000;
 
-      const distanceFromEnd =
-        Math.abs(eventTime - toTime) / 60000;
+  const toTime =
+    safeDate(gapTo.timestamp);
 
-      const nearestDistance =
-        Math.min(
-          distanceFromStart,
-          distanceFromEnd
+
+  /* =======================================================
+     FIND SUPPORTING EVENTS
+  ======================================================= */
+
+  const candidates = useMemo(() => {
+
+    if (!events.length) {
+      return [];
+    }
+
+
+    if (!fromTime || !toTime) {
+      return [];
+    }
+
+
+    return events
+
+      .filter((event) => {
+
+        const eventId =
+          getEventId(event);
+
+
+        return (
+          eventId !== fromId &&
+          eventId !== toId
         );
 
-
-      let score = 0;
-
-
-      /*
-       * Temporal relevance
-       */
-
-      if (nearestDistance <= 15) {
-
-        score += 45;
-
-      } else if (nearestDistance <= 30) {
-
-        score += 35;
-
-      } else if (nearestDistance <= 60) {
-
-        score += 25;
-
-      } else if (nearestDistance <= 120) {
-
-        score += 10;
-
-      }
+      })
 
 
-      /*
-       * Independent source
-       */
+      .map((event) => {
 
-      if (
-        event.source !== gap.from.source &&
-        event.source !== gap.to.source
-      ) {
-
-        score += 20;
-
-      }
+        const eventTime =
+          safeDate(event.timestamp);
 
 
-      /*
-       * Event type relevance
-       */
-
-      const eventType =
-        event.event_type?.toLowerCase() || "";
-
-
-      if (
-        eventType.includes("update") ||
-        eventType.includes("change") ||
-        eventType.includes("deployment")
-      ) {
-
-        score += 20;
-
-      }
+        if (!eventTime) {
+          return {
+            ...event,
+            score: 0,
+          };
+        }
 
 
-      /*
-       * Title / description relevance
-       */
-
-      const text = `
-        ${event.title}
-        ${event.description || ""}
-        ${event.event_type || ""}
-      `.toLowerCase();
+        const distanceFromStart =
+          Math.abs(
+            eventTime.getTime() -
+            fromTime.getTime()
+          ) / 60000;
 
 
-      const keywords = [
-        "migration",
-        "infrastructure",
-        "configuration",
-        "deploy",
-        "update",
-        "cloud",
-        "aws",
-        "gcp",
-      ];
+        const distanceFromEnd =
+          Math.abs(
+            eventTime.getTime() -
+            toTime.getTime()
+          ) / 60000;
 
 
-      keywords.forEach((keyword) => {
+        const nearestDistance =
+          Math.min(
+            distanceFromStart,
+            distanceFromEnd
+          );
 
-        if (text.includes(keyword)) {
 
-          score += 2;
+        let score = 0;
+
+
+        /* -----------------------------------------------
+           TEMPORAL RELEVANCE
+        ----------------------------------------------- */
+
+        if (nearestDistance <= 15) {
+
+          score += 45;
+
+        } else if (nearestDistance <= 30) {
+
+          score += 35;
+
+        } else if (nearestDistance <= 60) {
+
+          score += 25;
+
+        } else if (nearestDistance <= 120) {
+
+          score += 10;
 
         }
 
-      });
+
+        /* -----------------------------------------------
+           INDEPENDENT SOURCE
+        ----------------------------------------------- */
+
+        if (
+          getEventSource(event) !==
+            getEventSource(gapFrom) &&
+          getEventSource(event) !==
+            getEventSource(gapTo)
+        ) {
+
+          score += 20;
+
+        }
+
+
+        /* -----------------------------------------------
+           EVENT TYPE
+        ----------------------------------------------- */
+
+        const eventType =
+          getEventType(event).toLowerCase();
+
+
+        if (
+          eventType.includes("update") ||
+          eventType.includes("change") ||
+          eventType.includes("deployment") ||
+          eventType.includes("deploy") ||
+          eventType.includes("migration")
+        ) {
+
+          score += 20;
+
+        }
+
+
+        /* -----------------------------------------------
+           CONTEXTUAL KEYWORDS
+        ----------------------------------------------- */
+
+        const text = `
+          ${getEventTitle(event)}
+          ${getEventDescription(event)}
+          ${getEventType(event)}
+          ${getEventSource(event)}
+        `.toLowerCase();
+
+
+        const keywords = [
+          "migration",
+          "infrastructure",
+          "configuration",
+          "deploy",
+          "deployment",
+          "update",
+          "change",
+          "cloud",
+          "aws",
+          "gcp",
+          "server",
+          "network",
+          "security",
+          "database",
+        ];
+
+
+        keywords.forEach((keyword) => {
+
+          if (text.includes(keyword)) {
+
+            score += 2;
+
+          }
+
+        });
+
+
+        return {
+          ...event,
+          score: Math.min(score, 99),
+        };
+
+      })
+
+
+      .filter(
+        (event) => event.score >= 20
+      )
+
+
+      .sort(
+        (a, b) => b.score - a.score
+      )
+
+
+      .slice(0, 4);
+
+  }, [
+    events,
+    fromId,
+    toId,
+    fromTime,
+    toTime,
+    gapFrom,
+    gapTo,
+  ]);
+
+
+  /* =======================================================
+     ROOT CAUSE HYPOTHESIS
+  ======================================================= */
+
+  const hypothesis = useMemo(() => {
+
+    try {
+
+      const result =
+        generateHypothesis(
+          gap,
+          candidates
+        );
 
 
       return {
-        ...event,
-        score: Math.min(score, 99),
+        title:
+          result?.title ||
+          "Possible operational sequence",
+
+        confidence:
+          typeof result?.confidence === "number"
+            ? result.confidence
+            : candidates.length > 0
+              ? Math.min(
+                  60 + candidates[0].score / 3,
+                  95
+                )
+              : 20,
+
+        explanation:
+          result?.explanation ||
+          "The available evidence suggests a possible relationship between the events surrounding this transition.",
+
+        signals:
+          Array.isArray(result?.signals)
+            ? result.signals
+            : [
+                "Temporal proximity between evidence events.",
+                "Cross-source activity detected.",
+                "Event context overlaps with the investigation window.",
+              ],
       };
 
-    })
+    } catch (error) {
 
-    .filter(
-      (event) => event.score >= 20
-    )
-
-    .sort(
-      (a, b) => b.score - a.score
-    )
-
-    .slice(0, 4);
+      console.error(
+        "Failed to generate hypothesis:",
+        error
+      );
 
 
-  /*
-   * =====================================================
-   * ROOT CAUSE HYPOTHESIS
-   * =====================================================
-   */
+      return {
+        title:
+          "Possible operational sequence",
 
-  const hypothesis = generateHypothesis(
-    gap,
-    candidates
-  );
+        confidence:
+          candidates.length > 0
+            ? candidates[0].score
+            : 20,
 
+        explanation:
+          "ChronoGraph identified temporal and contextual signals, but could not generate a complete hypothesis.",
 
-  /*
-   * =====================================================
-   * FORMATTING
-   * =====================================================
-   */
+        signals: [
+          "Temporal evidence was detected.",
+          "Supporting events were evaluated.",
+          "Further evidence may be required.",
+        ],
+      };
 
-  const formatTime = (timestamp) =>
-    new Date(timestamp).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    }
 
-
-  const formatDate = (timestamp) =>
-    new Date(timestamp).toLocaleDateString([], {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+  }, [gap, candidates]);
 
 
-  /*
-   * =====================================================
-   * TOP EVIDENCE
-   * =====================================================
-   *
-   * TOP EVIDENCE uses candidate score.
-   * It does NOT use hypothesis.confidence.
-   */
+  /* =======================================================
+     TOP EVIDENCE
+  ======================================================= */
 
   const topEvidence =
     candidates.length > 0
@@ -319,25 +613,38 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
       : 0;
 
 
-  /*
-   * =====================================================
-   * INVESTIGATION SUMMARY
-   * =====================================================
-   */
+  /* =======================================================
+     INVESTIGATION SUMMARY
+  ======================================================= */
+
+  const gapMinutes =
+    Number.isFinite(Number(gap.minutes))
+      ? Number(gap.minutes)
+      : fromTime && toTime
+        ? Math.round(
+            Math.abs(
+              toTime.getTime() -
+              fromTime.getTime()
+            ) / 60000
+          )
+        : 0;
+
 
   const investigationSummary =
     candidates.length > 0
+
       ? `ChronoGraph identified ${candidates.length} related event${
-          candidates.length > 1 ? "s" : ""
-        } that may explain the ${gap.minutes}-minute transition. The strongest supporting evidence has a relevance score of ${topEvidence}%.`
+          candidates.length > 1
+            ? "s"
+            : ""
+        } that may explain the ${gapMinutes}-minute transition. The strongest supporting evidence has a relevance score of ${topEvidence}%.`
+
       : "ChronoGraph could not identify strong supporting evidence for this transition.";
 
 
-  /*
-   * =====================================================
-   * PAGE
-   * =====================================================
-   */
+  /* =======================================================
+     PAGE
+  ======================================================= */
 
   return (
 
@@ -356,9 +663,11 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
             AI INVESTIGATION
           </p>
 
+
           <h1>
             Investigate the gap.
           </h1>
+
 
           <p className="investigation-description">
             ChronoGraph is analyzing the unexplained
@@ -372,6 +681,7 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
           <span className="status-dot" />
 
+
           {isAnalyzing
             ? "ANALYZING EVIDENCE"
             : "ANALYSIS COMPLETE"}
@@ -379,6 +689,22 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
         </div>
 
       </section>
+
+
+
+      {/* =================================================
+          ERROR / LOADING INFORMATION
+      ================================================= */}
+
+      {eventsError && (
+
+        <div className="graph-error">
+
+          {eventsError}
+
+        </div>
+
+      )}
 
 
 
@@ -412,13 +738,15 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
 
             <h2>
-              {gap.minutes} minute unexplained gap
+              {gapMinutes} minute unexplained gap
             </h2>
 
 
             <p className="anomaly-description">
+
               ChronoGraph detected a break in the
               expected sequence of events.
+
             </p>
 
 
@@ -431,8 +759,10 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
                 {(() => {
 
                   const Icon =
-                    sourceIcons[gap.from.source] ||
-                    GitBranch;
+                    sourceIcons[
+                      getEventSource(gapFrom)
+                    ] || GitBranch;
+
 
                   return <Icon size={19} />;
 
@@ -444,16 +774,21 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               <div>
 
                 <span>
-                  {gap.from.source} ·{" "}
-                  {formatTime(gap.from.timestamp)}
+
+                  {getEventSource(gapFrom)}
+                  {" · "}
+                  {formatTime(gapFrom.timestamp)}
+
                 </span>
 
+
                 <strong>
-                  {gap.from.title}
+                  {getEventTitle(gapFrom)}
                 </strong>
 
+
                 <small>
-                  {gap.from.event_id}
+                  {getEventId(gapFrom)}
                 </small>
 
               </div>
@@ -475,7 +810,7 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               <div>
 
                 <strong>
-                  {gap.minutes} MINUTES
+                  {gapMinutes} MINUTES
                 </strong>
 
                 <span>
@@ -496,8 +831,10 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
                 {(() => {
 
                   const Icon =
-                    sourceIcons[gap.to.source] ||
-                    GitBranch;
+                    sourceIcons[
+                      getEventSource(gapTo)
+                    ] || GitBranch;
+
 
                   return <Icon size={19} />;
 
@@ -509,16 +846,21 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               <div>
 
                 <span>
-                  {gap.to.source} ·{" "}
-                  {formatTime(gap.to.timestamp)}
+
+                  {getEventSource(gapTo)}
+                  {" · "}
+                  {formatTime(gapTo.timestamp)}
+
                 </span>
 
+
                 <strong>
-                  {gap.to.title}
+                  {getEventTitle(gapTo)}
                 </strong>
 
+
                 <small>
-                  {gap.to.event_id}
+                  {getEventId(gapTo)}
                 </small>
 
               </div>
@@ -547,6 +889,7 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
                 </p>
 
+
                 <h3>
                   {hypothesis.title}
                 </h3>
@@ -557,7 +900,9 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               <div className="hypothesis-confidence">
 
                 <strong>
-                  {hypothesis.confidence}%
+                  {Math.round(
+                    hypothesis.confidence
+                  )}%
                 </strong>
 
                 <span>
@@ -568,102 +913,127 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
             </div>
 
+
+
             {/* =================================================
-    INVESTIGATION VERDICT
-================================================= */}
+                INVESTIGATION VERDICT
+            ================================================= */}
 
-<div className="investigation-verdict">
+            <div className="investigation-verdict">
 
-  <div className="verdict-header">
+              <div className="verdict-header">
 
-    <div>
-      <p className="eyebrow">
-        <Sparkles size={13} />
-        INVESTIGATION VERDICT
-      </p>
+                <div>
 
-      <h2>
-        {hypothesis.title}
-      </h2>
-    </div>
+                  <p className="eyebrow">
 
-    <div className="verdict-confidence">
-      <strong>
-        {hypothesis.confidence}%
-      </strong>
+                    <Sparkles size={13} />
 
-      <span>
-        CONFIDENCE
-      </span>
-    </div>
+                    INVESTIGATION VERDICT
 
-  </div>
+                  </p>
 
 
-  <div className="verdict-body">
+                  <h2>
+                    {hypothesis.title}
+                  </h2>
 
-    <div className="verdict-item">
-
-      <span>
-        WHAT WE KNOW
-      </span>
-
-      <strong>
-        {candidates.length} related evidence
-        {candidates.length !== 1 ? "s" : ""} identified
-      </strong>
-
-    </div>
+                </div>
 
 
-    <div className="verdict-item">
+                <div className="verdict-confidence">
 
-      <span>
-        UNEXPLAINED WINDOW
-      </span>
+                  <strong>
+                    {Math.round(
+                      hypothesis.confidence
+                    )}%
+                  </strong>
 
-      <strong>
-        {gap.minutes} minutes
-      </strong>
+                  <span>
+                    CONFIDENCE
+                  </span>
 
-    </div>
+                </div>
 
-
-    <div className="verdict-item">
-
-      <span>
-        STRONGEST SIGNAL
-      </span>
-
-      <strong>
-        {candidates.length > 0
-          ? candidates[0].title
-          : "No strong signal found"}
-      </strong>
-
-    </div>
-
-  </div>
+              </div>
 
 
-  <div className="verdict-note">
+              <div className="verdict-body">
 
-    <ShieldCheck size={15} />
+                <div className="verdict-item">
 
-    <span>
-      This verdict summarizes the strongest available
-      evidence. Investigators should verify the underlying
-      events before treating it as a confirmed conclusion.
-    </span>
+                  <span>
+                    WHAT WE KNOW
+                  </span>
 
-  </div>
+                  <strong>
+                    {candidates.length} related evidence
+                    {candidates.length !== 1
+                      ? "s"
+                      : ""} identified
+                  </strong>
 
-</div>
+                </div>
+
+
+                <div className="verdict-item">
+
+                  <span>
+                    UNEXPLAINED WINDOW
+                  </span>
+
+                  <strong>
+                    {gapMinutes} minutes
+                  </strong>
+
+                </div>
+
+
+                <div className="verdict-item">
+
+                  <span>
+                    STRONGEST SIGNAL
+                  </span>
+
+                  <strong>
+
+                    {candidates.length > 0
+                      ? getEventTitle(
+                          candidates[0]
+                        )
+                      : "No strong signal found"}
+
+                  </strong>
+
+                </div>
+
+              </div>
+
+
+              <div className="verdict-note">
+
+                <ShieldCheck size={15} />
+
+                <span>
+
+                  This verdict summarizes the strongest
+                  available evidence. Investigators should
+                  verify the underlying events before
+                  treating it as a confirmed conclusion.
+
+                </span>
+
+              </div>
+
+            </div>
 
 
             <p className="hypothesis-explanation">
+
               {hypothesis.explanation}
+
             </p>
+
 
 
             {/* REASONING SIGNALS */}
@@ -684,8 +1054,11 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
                   >
 
                     <span className="signal-number">
-                      {String(index + 1).padStart(2, "0")}
+                      {String(
+                        index + 1
+                      ).padStart(2, "0")}
                     </span>
+
 
                     <span>
                       {signal}
@@ -699,6 +1072,7 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
             </div>
 
 
+
             {/* DISCLAIMER */}
 
             <div className="hypothesis-disclaimer">
@@ -706,9 +1080,11 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               <ShieldCheck size={14} />
 
               <span>
+
                 Hypothesis generated from temporal
                 and contextual evidence. Not a confirmed
                 conclusion.
+
               </span>
 
             </div>
@@ -736,9 +1112,11 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
                 AI REASONING SUMMARY
               </p>
 
+
               <h2>
                 What ChronoGraph found
               </h2>
+
 
               <p>
                 {investigationSummary}
@@ -755,7 +1133,6 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
           ================================================= */}
 
           <div className="investigation-summary-metrics">
-
 
             <div className="summary-metric">
 
@@ -777,7 +1154,7 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               </span>
 
               <strong>
-                {gap.minutes}m
+                {gapMinutes}m
               </strong>
 
             </div>
@@ -794,7 +1171,6 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               </strong>
 
             </div>
-
 
           </div>
 
@@ -839,6 +1215,7 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
                 </p>
 
+
                 <h2>
                   Possible supporting evidence
                 </h2>
@@ -875,24 +1252,49 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
                 CANDIDATES
             ================================================= */}
 
-            {candidates.length > 0 ? (
+            {isLoadingEvents ? (
+
+              <div className="no-evidence">
+
+                <Search size={20} />
+
+                <div>
+
+                  <strong>
+                    Loading supporting evidence...
+                  </strong>
+
+                  <p>
+                    ChronoGraph is retrieving events
+                    from the evidence graph.
+                  </p>
+
+                </div>
+
+              </div>
+
+            ) : candidates.length > 0 ? (
 
               <div className="candidate-list">
 
                 {candidates.map((event) => {
 
                   const Icon =
-                    sourceIcons[event.source] ||
-                    GitBranch;
+                    sourceIcons[
+                      getEventSource(event)
+                    ] || GitBranch;
+
+
+                  const eventId =
+                    getEventId(event);
 
 
                   return (
 
                     <div
                       className="evidence-candidate"
-                      key={event.event_id}
+                      key={eventId}
                     >
-
 
                       <div className="candidate-icon">
 
@@ -904,12 +1306,12 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
                       <div className="candidate-content">
 
-
                         <div className="candidate-top">
 
                           <span>
-                            {event.source}
+                            {getEventSource(event)}
                           </span>
+
 
                           <span>
                             {formatTime(
@@ -921,21 +1323,28 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
 
                         <strong>
-                          {event.title}
+                          {getEventTitle(event)}
                         </strong>
 
 
                         <small>
-                          {event.event_id} ·{" "}
-                          {formatDate(event.timestamp)}
+
+                          {eventId}
+                          {" · "}
+                          {formatDate(
+                            event.timestamp
+                          )}
+
                         </small>
 
 
                         <p>
+
                           Temporal proximity and
                           event context suggest this
                           evidence may help explain
                           the transition.
+
                         </p>
 
                       </div>
@@ -957,7 +1366,8 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
                           <div
                             style={{
-                              width: `${event.score}%`,
+                              width:
+                                `${event.score}%`,
                             }}
                           />
 
@@ -1018,16 +1428,20 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
 
 
           <h2>
+
             What happened
             <br />
             between these events?
+
           </h2>
 
 
           <p>
+
             The investigation engine examines the
             temporal relationship between independent
             evidence sources.
+
           </p>
 
 
@@ -1045,7 +1459,7 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               </span>
 
               <strong>
-                {gap.minutes} minutes
+                {gapMinutes} minutes
               </strong>
 
             </div>
@@ -1067,7 +1481,11 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               </span>
 
               <strong>
-                {gap.from.source} → {gap.to.source}
+
+                {getEventSource(gapFrom)}
+                {" → "}
+                {getEventSource(gapTo)}
+
               </strong>
 
             </div>
@@ -1089,9 +1507,11 @@ const [isAnalyzing, setIsAnalyzing] = useState(true);
               </span>
 
               <strong>
+
                 {candidates.length > 0
-                  ? `${candidates[0].score}%`
+                  ? `${topEvidence}%`
                   : "LOW"}
+
               </strong>
 
             </div>
