@@ -1,253 +1,280 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  MessageSquare,
-  GitBranch,
-  Mail,
-  ArrowRight,
-  Zap,
-  Shield,
-  Network,
-  Server,
+  Clock3,
+  Search,
+  Filter,
   RefreshCw,
   AlertCircle,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 
+import EventCard from "../components/EventCard";
 import { getEvents } from "../services/api";
 
-const sourceIcons = {
-  Slack: MessageSquare,
-  GitHub: GitBranch,
-  Email: Mail,
-  "System Log": Server,
-  "Security Log": Shield,
-  "Network Log": Network,
-  "Application Log": Server,
-};
-
-function formatTime(timestamp) {
-  if (!timestamp) return "--:--";
-
-  const date = new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    return "--:--";
-  }
-
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatDate(timestamp) {
-  if (!timestamp) return "--";
-
-  const date = new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    return "--";
-  }
-
-  return date.toLocaleDateString([], {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 export default function TimelinePage() {
-  const navigate = useNavigate();
-
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("ALL");
 
   // ---------------------------------------------------------
-  // Load events from Neo4j through FastAPI
+  // Load events from backend
   // ---------------------------------------------------------
 
-  async function loadEvents() {
+  const loadEvents = async (isRefresh = false) => {
     try {
-      setLoading(true);
-      setError("");
-
-      const data = await getEvents();
-
-      console.log("ChronoGraph events received:", data);
-
-      if (!data || !Array.isArray(data.events)) {
-        throw new Error("Invalid event data received from backend");
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
       }
 
-      setEvents(data.events);
+      setError("");
+
+      const response = await getEvents();
+
+      const backendEvents =
+        Array.isArray(response)
+          ? response
+          : Array.isArray(response?.events)
+            ? response.events
+            : [];
+
+      setEvents(backendEvents);
     } catch (err) {
-      console.error("Failed to load ChronoGraph events:", err);
+      console.error("Timeline event loading failed:", err);
 
       setError(
         err?.message ||
-          "Unable to connect to the ChronoGraph backend."
+          "Unable to load events from the backend."
       );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }
+  };
+
+  // ---------------------------------------------------------
+  // Initial load
+  // ---------------------------------------------------------
 
   useEffect(() => {
     loadEvents();
   }, []);
 
   // ---------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------
+
+  const getEventId = (event) =>
+    event?.id ||
+    event?.event_id ||
+    "UNKNOWN";
+
+  const getEventTitle = (event) =>
+    event?.title ||
+    event?.name ||
+    "Untitled Event";
+
+  const getEventSource = (event) =>
+    event?.source ||
+    "System";
+
+  const getEventDescription = (event) =>
+    event?.description ||
+    "No description available.";
+
+  const getValidDate = (timestamp) => {
+    if (!timestamp) {
+      return null;
+    }
+
+    const date = new Date(timestamp);
+
+    return Number.isNaN(date.getTime())
+      ? null
+      : date;
+  };
+
+  const formatTime = (timestamp) => {
+    const date = getValidDate(timestamp);
+
+    if (!date) {
+      return "--:--";
+    }
+
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  };
+
+  const formatDate = (timestamp) => {
+    const date = getValidDate(timestamp);
+
+    if (!date) {
+      return "Unknown date";
+    }
+
+    return date.toLocaleDateString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  // ---------------------------------------------------------
   // Sort events chronologically
   // ---------------------------------------------------------
 
   const sortedEvents = useMemo(() => {
-    return [...events].sort((a, b) => {
-      return (
-        new Date(a.timestamp).getTime() -
-        new Date(b.timestamp).getTime()
+    return [...events]
+      .filter((event) =>
+        getValidDate(event?.timestamp)
+      )
+      .sort(
+        (a, b) =>
+          getValidDate(a.timestamp) -
+          getValidDate(b.timestamp)
       );
-    });
   }, [events]);
 
-  const firstEvent = sortedEvents[0];
-  const lastEvent = sortedEvents[sortedEvents.length - 1];
-
   // ---------------------------------------------------------
-  // Navigate to investigation
+  // Available sources
   // ---------------------------------------------------------
 
-  function inspectEvent(event) {
-    if (!event?.id) {
-      console.warn("Cannot inspect event without an ID:", event);
-      return;
+  const sources = useMemo(() => {
+    const uniqueSources = new Set();
+
+    events.forEach((event) => {
+      if (event?.source) {
+        uniqueSources.add(event.source);
+      }
+    });
+
+    return ["ALL", ...Array.from(uniqueSources)];
+  }, [events]);
+
+  // ---------------------------------------------------------
+  // Filter events
+  // ---------------------------------------------------------
+
+  const filteredEvents = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return sortedEvents.filter((event) => {
+      const source = getEventSource(event);
+
+      const matchesSource =
+        sourceFilter === "ALL" ||
+        source === sourceFilter;
+
+      if (!matchesSource) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      const searchableText = [
+        getEventId(event),
+        getEventTitle(event),
+        getEventSource(event),
+        getEventDescription(event),
+        event?.event_type || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }, [
+    sortedEvents,
+    search,
+    sourceFilter,
+  ]);
+
+  // ---------------------------------------------------------
+  // Calculate timeline statistics
+  // ---------------------------------------------------------
+
+  const timelineStats = useMemo(() => {
+    if (sortedEvents.length === 0) {
+      return {
+        total: 0,
+        sources: 0,
+        duration: 0,
+      };
     }
 
-    navigate(
-      `/investigation?event=${encodeURIComponent(event.id)}`
+    const first = getValidDate(
+      sortedEvents[0]?.timestamp
     );
-  }
 
-  function openInvestigation() {
-    if (firstEvent?.id) {
-      navigate(
-        `/investigation?event=${encodeURIComponent(firstEvent.id)}`
-      );
-    } else {
-      navigate("/investigation");
-    }
-  }
+    const last = getValidDate(
+      sortedEvents[sortedEvents.length - 1]
+        ?.timestamp
+    );
+
+    const duration =
+      first && last
+        ? Math.round(
+            (last.getTime() - first.getTime()) /
+              60000
+          )
+        : 0;
+
+    return {
+      total: sortedEvents.length,
+      sources: new Set(
+        sortedEvents.map((event) =>
+          getEventSource(event)
+        )
+      ).size,
+      duration,
+    };
+  }, [sortedEvents]);
+
+  // ---------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------
 
   return (
-    <main className="timeline-page">
+    <div className="page-shell">
 
       {/* =====================================================
           HEADER
       ===================================================== */}
 
-      <section className="page-header timeline-header">
+      <section className="hero-section">
 
         <div>
+
           <p className="eyebrow">
-            TEMPORAL SEQUENCE
+            TEMPORAL EVENT ANALYSIS
           </p>
 
           <h1>
-            Incident Timeline
+            Timeline of the incident.
+            <br />
+            <span>Every event. Every transition.</span>
           </h1>
 
-          <p className="page-description">
-            Follow the chain of events and discover how the
-            incident evolved across different systems.
+          <p className="hero-description">
+            Explore the chronological sequence of
+            evidence collected across connected systems.
           </p>
+
         </div>
 
-        <div className="timeline-live">
+        <div className="case-status">
+
           <span className="status-dot" />
-          TIMELINE ACTIVE
-        </div>
 
-      </section>
-
-
-      {/* =====================================================
-          TIMELINE SUMMARY
-      ===================================================== */}
-
-      <section className="timeline-summary">
-
-        <div className="timeline-stat">
-
-          <span>
-            START
-          </span>
-
-          <strong>
-            {firstEvent
-              ? formatTime(firstEvent.timestamp)
-              : "--:--"}
-          </strong>
-
-          <small>
-            {firstEvent
-              ? formatDate(firstEvent.timestamp)
-              : "No events"}
-          </small>
-
-        </div>
-
-
-        <div className="timeline-stat">
-
-          <span>
-            END
-          </span>
-
-          <strong>
-            {lastEvent
-              ? formatTime(lastEvent.timestamp)
-              : "--:--"}
-          </strong>
-
-          <small>
-            {lastEvent
-              ? formatDate(lastEvent.timestamp)
-              : "No events"}
-          </small>
-
-        </div>
-
-
-        <div className="timeline-stat">
-
-          <span>
-            EVENTS
-          </span>
-
-          <strong>
-            {events.length}
-          </strong>
-
-          <small>
-            Events detected
-          </small>
-
-        </div>
-
-
-        <div className="timeline-stat highlight">
-
-          <span>
-            CONFIDENCE
-          </span>
-
-          <strong>
-            87%
-          </strong>
-
-          <small>
-            AI correlation
-          </small>
+          LIVE EVENT DATA
 
         </div>
 
@@ -255,426 +282,340 @@ export default function TimelinePage() {
 
 
       {/* =====================================================
-          MAIN TIMELINE WORKSPACE
+          TIMELINE METRICS
       ===================================================== */}
 
-      <section className="timeline-workspace">
+      <section className="metrics">
 
-        {/* ===================================================
-            TIMELINE PANEL
-        =================================================== */}
+        <div className="metric-card">
 
-        <div className="timeline-panel">
+          <span>
+            TOTAL EVENTS
+          </span>
 
-          {/* PANEL HEADER */}
+          <strong>
+            {timelineStats.total}
+          </strong>
 
-          <div className="timeline-panel-header">
-
-            <div>
-
-              <p className="eyebrow">
-                CASE CG-2026-001
-              </p>
-
-              <h2>
-                Infrastructure Migration
-              </h2>
-
-            </div>
-
-            <div className="timeline-filter">
-
-              <span>
-                ALL SOURCES
-              </span>
-
-              <span>
-                {events.length} EVENTS
-              </span>
-
-            </div>
-
-          </div>
-
-
-          {/* =================================================
-              LOADING
-          ================================================= */}
-
-          {loading && (
-            <div className="timeline-empty">
-
-              <RefreshCw
-                size={22}
-                className="loading-icon"
-              />
-
-              <p>
-                Loading events from Neo4j...
-              </p>
-
-              <small>
-                ChronoGraph is retrieving the latest event sequence.
-              </small>
-
-            </div>
-          )}
-
-
-          {/* =================================================
-              ERROR
-          ================================================= */}
-
-          {!loading && error && (
-            <div className="timeline-empty">
-
-              <AlertCircle size={24} />
-
-              <p>
-                Failed to load events.
-              </p>
-
-              <small>
-                {error}
-              </small>
-
-              <button
-                type="button"
-                className="timeline-retry-button"
-                onClick={loadEvents}
-              >
-                <RefreshCw size={15} />
-                Retry connection
-              </button>
-
-            </div>
-          )}
-
-
-          {/* =================================================
-              NO EVENTS
-          ================================================= */}
-
-          {!loading &&
-            !error &&
-            sortedEvents.length === 0 && (
-              <div className="timeline-empty">
-
-                <Zap size={24} />
-
-                <p>
-                  No events found in Neo4j.
-                </p>
-
-                <small>
-                  Create or import events to build the incident
-                  timeline.
-                </small>
-
-              </div>
-            )}
-
-
-          {/* =================================================
-              TIMELINE
-          ================================================= */}
-
-          {!loading &&
-            !error &&
-            sortedEvents.length > 0 && (
-
-              <div className="timeline">
-
-                {sortedEvents.map((event, index) => {
-
-                  const Icon =
-                    sourceIcons[event.source] || Zap;
-
-                  return (
-
-                    <div
-                      className="timeline-event"
-                      key={event.id || `event-${index}`}
-                    >
-
-                      {/* =====================================
-                          TIME
-                      ===================================== */}
-
-                      <div className="timeline-time">
-
-                        <strong>
-                          {formatTime(event.timestamp)}
-                        </strong>
-
-                        <span>
-                          {formatDate(event.timestamp)}
-                        </span>
-
-                      </div>
-
-
-                      {/* =====================================
-                          LINE + NODE
-                      ===================================== */}
-
-                      <div className="timeline-marker">
-
-                        <div className="timeline-node">
-
-                          <Icon size={17} />
-
-                        </div>
-
-                        {index !==
-                          sortedEvents.length - 1 && (
-                          <div className="timeline-line" />
-                        )}
-
-                      </div>
-
-
-                      {/* =====================================
-                          EVENT CARD
-                      ===================================== */}
-
-                      <div className="timeline-card">
-
-                        <div className="timeline-card-top">
-
-                          <div className="timeline-source">
-
-                            <Icon size={14} />
-
-                            <span>
-                              {event.source || "Unknown Source"}
-                            </span>
-
-                          </div>
-
-                          <span className="event-id">
-                            {event.id || "UNKNOWN"}
-                          </span>
-
-                        </div>
-
-
-                        <h3>
-                          {event.title || "Untitled Event"}
-                        </h3>
-
-
-                        <p>
-                          {event.description ||
-                            "No description available."}
-                        </p>
-
-
-                        <div className="timeline-card-bottom">
-
-                          <span className="event-type">
-                            EVENT
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              inspectEvent(event)
-                            }
-                          >
-                            Inspect
-                            <ArrowRight size={14} />
-                          </button>
-
-                        </div>
-
-                      </div>
-
-                    </div>
-                  );
-                })}
-
-
-                {/* ===========================================
-                    AI INFERENCE
-                =========================================== */}
-
-                <div className="ai-inference">
-
-                  <div className="ai-inference-icon">
-
-                    <Zap size={17} />
-
-                  </div>
-
-
-                  <div>
-
-                    <span className="eyebrow">
-                      AI INFERENCE
-                    </span>
-
-                    <h3>
-                      A probable operational sequence
-                      was detected.
-                    </h3>
-
-                    <p>
-                      ChronoGraph is analyzing the temporal
-                      order of events across connected systems.
-                      The sequence may represent a related
-                      incident.
-                    </p>
-
-                  </div>
-
-
-                  <div className="ai-score">
-
-                    <strong>
-                      87%
-                    </strong>
-
-                    <span>
-                      CONFIDENCE
-                    </span>
-
-                  </div>
-
-                </div>
-
-              </div>
-            )}
+          <small>
+            Events analyzed
+          </small>
 
         </div>
 
 
-        {/* ===================================================
-            RIGHT INSIGHT PANEL
-        =================================================== */}
+        <div className="metric-card">
 
-        <aside className="timeline-insight">
+          <span>
+            SOURCES
+          </span>
 
-          <p className="eyebrow">
-            SEQUENCE INTELLIGENCE
-          </p>
+          <strong>
+            {timelineStats.sources}
+          </strong>
 
+          <small>
+            Connected evidence sources
+          </small>
 
-          <div className="insight-orbit">
-
-            <div />
-            <div />
-
-            <Zap size={20} />
-
-          </div>
+        </div>
 
 
-          <h2>
+        <div className="metric-card">
 
-            {events.length} events.
-            <br />
-            One story.
+          <span>
+            TIME SPAN
+          </span>
 
-          </h2>
+          <strong>
+            {timelineStats.duration >= 60
+              ? `${Math.floor(
+                  timelineStats.duration / 60
+                )}h ${
+                  timelineStats.duration % 60
+                }m`
+              : `${timelineStats.duration}m`}
+          </strong>
 
+          <small>
+            From first to last event
+          </small>
 
-          <p>
-            ChronoGraph detected temporal relationships
-            between independent sources.
-          </p>
-
-
-          {/* =================================================
-              SEQUENCE FLOW
-          ================================================= */}
-
-          <div className="sequence-flow">
-
-            {sortedEvents.slice(0, 4).map(
-              (event, index) => {
-
-                return (
-
-                  <button
-                    type="button"
-                    className="sequence-flow-item"
-                    key={event.id || `sequence-${index}`}
-                    onClick={() => inspectEvent(event)}
-                  >
-
-                    <span>
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-
-                    <strong>
-                      {event.title || "Event"}
-                    </strong>
-
-                    <small>
-                      {event.source || "Unknown"}
-                    </small>
-
-                  </button>
-                );
-              }
-            )}
-
-          </div>
+        </div>
 
 
-          {/* =================================================
-              CONFIDENCE
-          ================================================= */}
+        <div className="metric-card accent">
 
-          <div className="confidence-box">
+          <span>
+            DISPLAYED
+          </span>
 
-            <div>
+          <strong>
+            {filteredEvents.length}
+          </strong>
 
-              <span>
-                SEQUENCE CONFIDENCE
-              </span>
+          <small>
+            Matching current filters
+          </small>
 
-              <strong>
-                87%
-              </strong>
+        </div>
 
-            </div>
+      </section>
 
 
-            <div className="confidence-bar">
+      {/* =====================================================
+          TIMELINE PANEL
+      ===================================================== */}
 
-              <div
-                style={{
-                  width: "87%",
-                }}
-              />
+      <section className="panel">
 
-            </div>
+        {/* HEADER */}
+
+        <div className="panel-header">
+
+          <div>
+
+            <p className="eyebrow">
+              INCIDENT TIMELINE
+            </p>
+
+            <h2>
+              Chronological evidence
+            </h2>
 
           </div>
-
-
-          {/* =================================================
-              INVESTIGATION BUTTON
-          ================================================= */}
 
           <button
             type="button"
-            className="investigate-button"
-            onClick={openInvestigation}
+            onClick={() => loadEvents(true)}
+            disabled={refreshing}
           >
 
-            Open investigation
+            <RefreshCw
+              size={15}
+              className={
+                refreshing
+                  ? "spin"
+                  : ""
+              }
+            />
 
-            <ArrowRight size={15} />
+            {refreshing
+              ? "Refreshing..."
+              : "Refresh"}
 
           </button>
 
-        </aside>
+        </div>
+
+
+        {/* =================================================
+            FILTER BAR
+        ================================================= */}
+
+        <div className="timeline-toolbar">
+
+          <div className="timeline-search">
+
+            <Search size={16} />
+
+            <input
+              type="text"
+              placeholder="Search events, sources or descriptions..."
+              value={search}
+              onChange={(event) =>
+                setSearch(event.target.value)
+              }
+            />
+
+          </div>
+
+
+          <div className="timeline-filter">
+
+            <Filter size={15} />
+
+            <select
+              value={sourceFilter}
+              onChange={(event) =>
+                setSourceFilter(event.target.value)
+              }
+            >
+
+              {sources.map((source) => (
+                <option
+                  key={source}
+                  value={source}
+                >
+                  {source === "ALL"
+                    ? "All sources"
+                    : source}
+                </option>
+              ))}
+
+            </select>
+
+          </div>
+
+        </div>
+
+
+        {/* =================================================
+            LOADING
+        ================================================= */}
+
+        {loading && (
+          <div className="timeline-state">
+
+            <RefreshCw
+              size={22}
+              className="spin"
+            />
+
+            <h3>
+              Loading timeline
+            </h3>
+
+            <p>
+              Retrieving event evidence from ChronoGraph.
+            </p>
+
+          </div>
+        )}
+
+
+        {/* =================================================
+            ERROR
+        ================================================= */}
+
+        {!loading && error && (
+          <div className="timeline-state error">
+
+            <AlertCircle size={24} />
+
+            <h3>
+              Unable to load timeline
+            </h3>
+
+            <p>
+              {error}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => loadEvents()}
+            >
+              Try again
+            </button>
+
+          </div>
+        )}
+
+
+        {/* =================================================
+            EMPTY
+        ================================================= */}
+
+        {!loading &&
+          !error &&
+          filteredEvents.length === 0 && (
+            <div className="timeline-state">
+
+              <Clock3 size={24} />
+
+              <h3>
+                No events found
+              </h3>
+
+              <p>
+                {events.length === 0
+                  ? "The backend has not returned any events yet."
+                  : "No events match the current search or source filter."}
+              </p>
+
+              {(search || sourceFilter !== "ALL") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setSourceFilter("ALL");
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
+
+            </div>
+          )}
+
+
+        {/* =================================================
+            EVENTS
+        ================================================= */}
+
+        {!loading &&
+          !error &&
+          filteredEvents.length > 0 && (
+            <div className="timeline-container">
+
+              <div className="timeline-line" />
+
+              {filteredEvents.map(
+                (event, index) => (
+
+                  <div
+                    className="timeline-item"
+                    key={`${getEventId(event)}-${index}`}
+                  >
+
+                    {/* TIME MARKER */}
+
+                    <div className="timeline-marker">
+
+                      <span />
+
+                    </div>
+
+
+                    {/* TIME */}
+
+                    <div className="timeline-time">
+
+                      <strong>
+                        {formatTime(
+                          event.timestamp
+                        )}
+                      </strong>
+
+                      <small>
+                        {formatDate(
+                          event.timestamp
+                        )}
+                      </small>
+
+                    </div>
+
+
+                    {/* EVENT */}
+
+                    <div className="timeline-event-card">
+
+                      <EventCard
+                        event={event}
+                      />
+
+                    </div>
+
+                  </div>
+
+                )
+              )}
+
+            </div>
+          )}
 
       </section>
 
-    </main>
+    </div>
   );
 }

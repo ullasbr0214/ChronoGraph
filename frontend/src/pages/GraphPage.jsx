@@ -18,6 +18,8 @@ import {
   ZoomIn,
   ZoomOut,
   AlertTriangle,
+  Server,
+  Network,
 } from "lucide-react";
 
 import { getGraph } from "../services/api";
@@ -27,14 +29,13 @@ import { getGraph } from "../services/api";
 ========================================================= */
 
 const sourceIcons = {
-  Slack: MessageSquare,
-  GitHub: GitBranch,
-  Email: Mail,
-
-  "System Log": ShieldCheck,
-  "Security Log": ShieldCheck,
-  "Network Log": GitBranch,
-  "Application Log": ShieldCheck,
+  slack: MessageSquare,
+  github: GitBranch,
+  email: Mail,
+  "system log": Server,
+  "security log": ShieldCheck,
+  "network log": Network,
+  "application log": Server,
 };
 
 /* =========================================================
@@ -42,38 +43,14 @@ const sourceIcons = {
 ========================================================= */
 
 const DEFAULT_POSITIONS = [
-  {
-    left: "15%",
-    top: "25%",
-  },
-  {
-    left: "39%",
-    top: "60%",
-  },
-  {
-    left: "65%",
-    top: "35%",
-  },
-  {
-    left: "82%",
-    top: "65%",
-  },
-  {
-    left: "25%",
-    top: "70%",
-  },
-  {
-    left: "75%",
-    top: "20%",
-  },
-  {
-    left: "50%",
-    top: "22%",
-  },
-  {
-    left: "55%",
-    top: "75%",
-  },
+  { left: "14%", top: "25%" },
+  { left: "38%", top: "60%" },
+  { left: "65%", top: "34%" },
+  { left: "83%", top: "64%" },
+  { left: "24%", top: "72%" },
+  { left: "75%", top: "19%" },
+  { left: "50%", top: "20%" },
+  { left: "55%", top: "78%" },
 ];
 
 /* =========================================================
@@ -85,7 +62,11 @@ function getEventId(event) {
 }
 
 function getSourceIcon(source) {
-  return sourceIcons[source] || GitBranch;
+  const normalized = String(source || "")
+    .trim()
+    .toLowerCase();
+
+  return sourceIcons[normalized] || GitBranch;
 }
 
 function formatTime(timestamp) {
@@ -128,52 +109,17 @@ function formatDateTime(timestamp) {
 }
 
 /* =========================================================
-   FALLBACK TEMPORAL RELATIONSHIPS
-
-   Used only when Neo4j currently has no relationships.
-========================================================= */
-
-function createTemporalRelationships(events) {
-  if (!events || events.length < 2) {
-    return [];
-  }
-
-  return events
-    .slice(0, -1)
-    .map((event, index) => {
-      const source = getEventId(event);
-      const target = getEventId(events[index + 1]);
-
-      if (!source || !target) {
-        return null;
-      }
-
-      return {
-        source,
-        target,
-        relationship: "PRECEDES",
-        generated: true,
-      };
-    })
-    .filter(Boolean);
-}
-
-/* =========================================================
    NORMALIZE BACKEND RELATIONSHIPS
 
-   Supports:
+   Backend currently returns:
+
    {
      source,
      target,
      relationship
    }
 
-   and:
-   {
-     from_id,
-     to_id,
-     relationship
-   }
+   This also accepts from_id / to_id for compatibility.
 ========================================================= */
 
 function normalizeRelationships(relationships) {
@@ -184,18 +130,20 @@ function normalizeRelationships(relationships) {
   return relationships
     .map((relationship) => {
       const source =
-        relationship?.source ||
-        relationship?.from ||
-        relationship?.from_id;
+        relationship?.source ??
+        relationship?.from ??
+        relationship?.from_id ??
+        null;
 
       const target =
-        relationship?.target ||
-        relationship?.to ||
-        relationship?.to_id;
+        relationship?.target ??
+        relationship?.to ??
+        relationship?.to_id ??
+        null;
 
       const relationshipType =
-        relationship?.relationship ||
-        relationship?.type ||
+        relationship?.relationship ??
+        relationship?.type ??
         "RELATED_TO";
 
       if (!source || !target) {
@@ -203,9 +151,9 @@ function normalizeRelationships(relationships) {
       }
 
       return {
-        source,
-        target,
-        relationship: relationshipType,
+        source: String(source),
+        target: String(target),
+        relationship: String(relationshipType),
         generated: false,
       };
     })
@@ -217,15 +165,7 @@ function normalizeRelationships(relationships) {
 ========================================================= */
 
 export default function GraphPage() {
-  /* -------------------------------------------------------
-     REFS
-  ------------------------------------------------------- */
-
   const networkRef = useRef(null);
-
-  /* -------------------------------------------------------
-     STATE
-  ------------------------------------------------------- */
 
   const [events, setEvents] = useState([]);
   const [relationships, setRelationships] = useState([]);
@@ -256,20 +196,14 @@ export default function GraphPage() {
 
       console.log(
         "CHRONOGRAPH GRAPH RESPONSE:",
-        JSON.stringify(response, null, 2)
+        response
       );
 
-      /* ---------------------------------------------------
-         Extract nodes
-      --------------------------------------------------- */
-
-      const backendNodes = Array.isArray(response?.nodes)
+      const backendNodes = Array.isArray(
+        response?.nodes
+      )
         ? response.nodes
         : [];
-
-      /* ---------------------------------------------------
-         Extract relationships
-      --------------------------------------------------- */
 
       const backendRelationships = Array.isArray(
         response?.relationships
@@ -278,33 +212,33 @@ export default function GraphPage() {
         : [];
 
       /* ---------------------------------------------------
-         Sort events chronologically
+         SORT EVENTS CHRONOLOGICALLY
       --------------------------------------------------- */
 
       const sortedEvents = [...backendNodes].sort(
         (a, b) => {
-          const dateA = new Date(
+          const timeA = new Date(
             a?.timestamp
           ).getTime();
 
-          const dateB = new Date(
+          const timeB = new Date(
             b?.timestamp
           ).getTime();
 
-          const safeA = Number.isNaN(dateA)
-            ? 0
-            : dateA;
+          if (Number.isNaN(timeA)) {
+            return 1;
+          }
 
-          const safeB = Number.isNaN(dateB)
-            ? 0
-            : dateB;
+          if (Number.isNaN(timeB)) {
+            return -1;
+          }
 
-          return safeA - safeB;
+          return timeA - timeB;
         }
       );
 
       /* ---------------------------------------------------
-         Normalize real Neo4j relationships
+         USE ONLY REAL NEO4J RELATIONSHIPS
       --------------------------------------------------- */
 
       const normalizedRelationships =
@@ -312,31 +246,14 @@ export default function GraphPage() {
           backendRelationships
         );
 
-      /* ---------------------------------------------------
-         Use real relationships if available.
-
-         Otherwise generate temporal links.
-      --------------------------------------------------- */
-
-      const finalRelationships =
-        normalizedRelationships.length > 0
-          ? normalizedRelationships
-          : createTemporalRelationships(
-              sortedEvents
-            );
-
-      /* ---------------------------------------------------
-         Update state
-      --------------------------------------------------- */
-
       setEvents(sortedEvents);
 
       setRelationships(
-        finalRelationships
+        normalizedRelationships
       );
 
       /* ---------------------------------------------------
-         Keep selected event synchronized
+         KEEP SELECTED EVENT AFTER REFRESH
       --------------------------------------------------- */
 
       setSelectedEvent(
@@ -346,9 +263,7 @@ export default function GraphPage() {
           }
 
           const selectedId =
-            getEventId(
-              previousSelected
-            );
+            getEventId(previousSelected);
 
           return (
             sortedEvents.find(
@@ -367,7 +282,7 @@ export default function GraphPage() {
 
       console.log(
         "GRAPH RELATIONSHIPS:",
-        finalRelationships
+        normalizedRelationships
       );
     } catch (err) {
       console.error(
@@ -411,15 +326,11 @@ export default function GraphPage() {
         return DEFAULT_POSITIONS[index];
       }
 
-      /*
-       * Deterministic fallback positions for additional events.
-       */
-
       const left =
-        15 + ((index * 23) % 70);
+        12 + ((index * 21) % 76);
 
       const top =
-        20 + ((index * 31) % 60);
+        18 + ((index * 29) % 64);
 
       return {
         left: `${left}%`,
@@ -429,14 +340,9 @@ export default function GraphPage() {
   }, [events]);
 
   /* =======================================================
-     CALCULATE CONNECTION LINES
+     CALCULATE CONNECTIONS
 
-     Important:
-     We use offsetLeft / offsetTop instead of
-     getBoundingClientRect().
-
-     This keeps SVG coordinates stable when the
-     complete graph is zoomed.
+     Nodes and SVG use the same graph coordinate system.
   ======================================================= */
 
   const calculateConnections = useCallback(() => {
@@ -458,16 +364,33 @@ export default function GraphPage() {
       return;
     }
 
-    const positions = nodes.map(
-      (node) => ({
-        x:
-          node.offsetLeft +
-          node.offsetWidth / 2,
+    const networkRect =
+      network.getBoundingClientRect();
 
-        y:
-          node.offsetTop +
-          node.offsetHeight / 2,
-      })
+    if (
+      networkRect.width === 0 ||
+      networkRect.height === 0
+    ) {
+      return;
+    }
+
+    const positions = nodes.map(
+      (node) => {
+        const rect =
+          node.getBoundingClientRect();
+
+        return {
+          x:
+            rect.left -
+            networkRect.left +
+            rect.width / 2,
+
+          y:
+            rect.top -
+            networkRect.top +
+            rect.height / 2,
+        };
+      }
     );
 
     const lines = relationships
@@ -477,14 +400,10 @@ export default function GraphPage() {
           relationshipIndex
         ) => {
           const sourceId =
-            relationship?.source ||
-            relationship?.from ||
-            relationship?.from_id;
+            relationship?.source;
 
           const targetId =
-            relationship?.target ||
-            relationship?.to ||
-            relationship?.to_id;
+            relationship?.target;
 
           if (
             !sourceId ||
@@ -496,15 +415,17 @@ export default function GraphPage() {
           const sourceIndex =
             events.findIndex(
               (event) =>
-                getEventId(event) ===
-                sourceId
+                String(
+                  getEventId(event)
+                ) === String(sourceId)
             );
 
           const targetIndex =
             events.findIndex(
               (event) =>
-                getEventId(event) ===
-                targetId
+                String(
+                  getEventId(event)
+                ) === String(targetId)
             );
 
           if (
@@ -537,12 +458,10 @@ export default function GraphPage() {
             y2: targetPosition.y,
 
             relationship:
-              relationship?.relationship ||
+              relationship.relationship ||
               "RELATED_TO",
 
-            generated:
-              relationship?.generated ||
-              false,
+            generated: false,
           };
         }
       )
@@ -555,7 +474,7 @@ export default function GraphPage() {
   ]);
 
   /* =======================================================
-     RECALCULATE CONNECTIONS AFTER RENDER
+     RECALCULATE CONNECTIONS
   ======================================================= */
 
   useEffect(() => {
@@ -575,24 +494,12 @@ export default function GraphPage() {
         });
     };
 
-    /*
-     * First calculation.
-     */
-
     updateConnections();
-
-    /*
-     * Recalculate when browser size changes.
-     */
 
     window.addEventListener(
       "resize",
       updateConnections
     );
-
-    /*
-     * Recalculate when graph container size changes.
-     */
 
     const network =
       networkRef.current;
@@ -639,7 +546,7 @@ export default function GraphPage() {
       () => {
         calculateConnections();
       },
-      50
+      200
     );
 
     return () => {
@@ -651,7 +558,7 @@ export default function GraphPage() {
   ]);
 
   /* =======================================================
-     ZOOM OUT
+     ZOOM CONTROLS
   ======================================================= */
 
   const handleZoomOut = () => {
@@ -663,10 +570,6 @@ export default function GraphPage() {
     );
   };
 
-  /* =======================================================
-     ZOOM IN
-  ======================================================= */
-
   const handleZoomIn = () => {
     setZoom((current) =>
       Math.min(
@@ -675,10 +578,6 @@ export default function GraphPage() {
       )
     );
   };
-
-  /* =======================================================
-     RESET ZOOM
-  ======================================================= */
 
   const handleResetZoom = () => {
     setZoom(100);
@@ -695,10 +594,7 @@ export default function GraphPage() {
   };
 
   /* =======================================================
-     RELATED EVENTS
-
-     Finds both incoming and outgoing
-     relationships.
+     SELECTED RELATED EVENTS
   ======================================================= */
 
   const selectedRelatedEvents =
@@ -722,25 +618,27 @@ export default function GraphPage() {
       relationships.forEach(
         (relationship) => {
           const source =
-            relationship?.source ||
-            relationship?.from ||
-            relationship?.from_id;
+            relationship?.source;
 
           const target =
-            relationship?.target ||
-            relationship?.to ||
-            relationship?.to_id;
+            relationship?.target;
 
           if (
-            source === selectedId
+            String(source) ===
+            String(selectedId)
           ) {
-            relatedIds.add(target);
+            relatedIds.add(
+              String(target)
+            );
           }
 
           if (
-            target === selectedId
+            String(target) ===
+            String(selectedId)
           ) {
-            relatedIds.add(source);
+            relatedIds.add(
+              String(source)
+            );
           }
         }
       );
@@ -748,7 +646,9 @@ export default function GraphPage() {
       return events.filter(
         (event) =>
           relatedIds.has(
-            getEventId(event)
+            String(
+              getEventId(event)
+            )
           )
       );
     }, [
@@ -759,9 +659,6 @@ export default function GraphPage() {
 
   /* =======================================================
      SELECTED RELATIONSHIPS
-
-     Used to show relationship type
-     in inspector.
   ======================================================= */
 
   const selectedRelationships =
@@ -777,19 +674,13 @@ export default function GraphPage() {
 
       return relationships.filter(
         (relationship) => {
-          const source =
-            relationship?.source ||
-            relationship?.from ||
-            relationship?.from_id;
-
-          const target =
-            relationship?.target ||
-            relationship?.to ||
-            relationship?.to_id;
-
           return (
-            source === selectedId ||
-            target === selectedId
+            String(
+              relationship.source
+            ) === String(selectedId) ||
+            String(
+              relationship.target
+            ) === String(selectedId)
           );
         }
       );
@@ -801,40 +692,39 @@ export default function GraphPage() {
   /* =======================================================
      GRAPH CONFIDENCE
 
-     This is currently a UI-derived metric.
-
-     Later we can replace this with
-     AI-generated confidence from backend.
+     UI metric only for now.
   ======================================================= */
 
-  const graphConfidence = useMemo(() => {
-    if (!events.length) {
-      return 0;
-    }
+  const graphConfidence =
+    useMemo(() => {
+      if (!events.length) {
+        return 0;
+      }
 
-    if (!relationships.length) {
-      return 50;
-    }
+      if (!relationships.length) {
+        return 50;
+      }
 
-    const possibleLinks = Math.max(
-      events.length - 1,
-      1
-    );
+      const possibleLinks =
+        Math.max(
+          events.length - 1,
+          1
+        );
 
-    const ratio =
-      relationships.length /
-      possibleLinks;
+      const ratio =
+        relationships.length /
+        possibleLinks;
 
-    return Math.min(
-      98,
-      Math.round(
-        70 + ratio * 20
-      )
-    );
-  }, [
-    events.length,
-    relationships.length,
-  ]);
+      return Math.min(
+        98,
+        Math.round(
+          70 + ratio * 20
+        )
+      );
+    }, [
+      events.length,
+      relationships.length,
+    ]);
 
   /* =======================================================
      GRAPH STATUS
@@ -861,6 +751,7 @@ export default function GraphPage() {
       <section className="page-header">
 
         <div>
+
           <p className="eyebrow">
             TEMPORAL GRAPH
           </p>
@@ -874,9 +765,11 @@ export default function GraphPage() {
             events connect across time,
             systems and evidence.
           </p>
+
         </div>
 
         <div className="graph-status">
+
           <span
             className={`status-dot ${
               error
@@ -886,9 +779,11 @@ export default function GraphPage() {
           />
 
           {graphStatusText}
+
         </div>
 
       </section>
+
 
       {/* =================================================
           GRAPH WORKSPACE
@@ -902,13 +797,12 @@ export default function GraphPage() {
 
         <div className="graph-canvas">
 
-          {/* =================================================
-              CANVAS HEADER
-          ================================================= */}
+          {/* CANVAS HEADER */}
 
           <div className="canvas-header">
 
             <div>
+
               <span className="eyebrow">
                 CASE CG-2026-001
               </span>
@@ -916,7 +810,9 @@ export default function GraphPage() {
               <h2>
                 Infrastructure Migration
               </h2>
+
             </div>
+
 
             {/* GRAPH CONTROLS */}
 
@@ -936,6 +832,7 @@ export default function GraphPage() {
                 <ZoomOut size={15} />
               </button>
 
+
               <button
                 type="button"
                 className="zoom-value"
@@ -946,6 +843,7 @@ export default function GraphPage() {
               >
                 {zoom}%
               </button>
+
 
               <button
                 type="button"
@@ -960,6 +858,7 @@ export default function GraphPage() {
               >
                 <ZoomIn size={15} />
               </button>
+
 
               <button
                 type="button"
@@ -986,6 +885,7 @@ export default function GraphPage() {
 
           </div>
 
+
           {/* =================================================
               NETWORK
           ================================================= */}
@@ -995,9 +895,7 @@ export default function GraphPage() {
             ref={networkRef}
           >
 
-            {/* =================================================
-                GRAPH LOADING
-            ================================================= */}
+            {/* LOADING */}
 
             {isLoading && (
               <div className="graph-loading">
@@ -1014,9 +912,8 @@ export default function GraphPage() {
               </div>
             )}
 
-            {/* =================================================
-                GRAPH ERROR
-            ================================================= */}
+
+            {/* ERROR */}
 
             {!isLoading &&
               error && (
@@ -1050,9 +947,8 @@ export default function GraphPage() {
                 </div>
               )}
 
-            {/* =================================================
-                EMPTY GRAPH
-            ================================================= */}
+
+            {/* EMPTY */}
 
             {!isLoading &&
               !error &&
@@ -1071,14 +967,13 @@ export default function GraphPage() {
                 </div>
               )}
 
+
             {/* =================================================
                 GRAPH VISUAL LAYER
-
-                Everything inside this layer is zoomed together.
-                This keeps nodes + lines + AI core aligned.
             ================================================= */}
 
             {!isLoading &&
+              !error &&
               events.length > 0 && (
                 <div
                   className="graph-visual-layer"
@@ -1086,9 +981,8 @@ export default function GraphPage() {
                     position:
                       "absolute",
                     inset: 0,
-                    transform: `scale(${
-                      zoom / 100
-                    })`,
+                    transform:
+                      `scale(${zoom / 100})`,
                     transformOrigin:
                       "center center",
                     transition:
@@ -1096,77 +990,58 @@ export default function GraphPage() {
                   }}
                 >
 
-                  {/* =================================================
-                      SVG CONNECTIONS
-                  ================================================= */}
+                  {/* SVG CONNECTIONS */}
 
                   <svg
                     className="graph-connections"
                     width="100%"
                     height="100%"
-                    viewBox="0 0 1000 600"
+                    viewBox={`0 0 ${
+                      networkRef.current?.clientWidth ||
+                      1000
+                    } ${
+                      networkRef.current?.clientHeight ||
+                      600
+                    }`}
                     preserveAspectRatio="none"
                     aria-hidden="true"
                   >
+
+                    <defs>
+
+                      <marker
+                        id="graph-arrow"
+                        markerWidth="8"
+                        markerHeight="8"
+                        refX="7"
+                        refY="4"
+                        orient="auto"
+                      >
+                        <path
+                          d="M0,0 L8,4 L0,8"
+                          fill="none"
+                        />
+                      </marker>
+
+                    </defs>
+
 
                     {connectionLines.map(
                       (line) => (
                         <line
                           key={line.id}
-                          x1={
-                            (line.x1 /
-                              Math.max(
-                                networkRef
-                                  .current
-                                  ?.clientWidth ||
-                                  1,
-                                1
-                              )) *
-                            1000
-                          }
-                          y1={
-                            (line.y1 /
-                              Math.max(
-                                networkRef
-                                  .current
-                                  ?.clientHeight ||
-                                  1,
-                                1
-                              )) *
-                            600
-                          }
-                          x2={
-                            (line.x2 /
-                              Math.max(
-                                networkRef
-                                  .current
-                                  ?.clientWidth ||
-                                  1,
-                                1
-                              )) *
-                            1000
-                          }
-                          y2={
-                            (line.y2 /
-                              Math.max(
-                                networkRef
-                                  .current
-                                  ?.clientHeight ||
-                                  1,
-                                1
-                              )) *
-                            600
-                          }
-                          className={`dynamic-connection ${
-                            line.generated
-                              ? "generated-connection"
-                              : ""
-                          }`}
+                          x1={line.x1}
+                          y1={line.y1}
+                          x2={line.x2}
+                          y2={line.y2}
+                          className="dynamic-connection"
+                          markerEnd="url(#graph-arrow)"
                         />
                       )
                     )}
 
                   </svg>
+
 
                   {/* =================================================
                       EVENTS
@@ -1197,9 +1072,14 @@ export default function GraphPage() {
 
                       const isSelected =
                         selectedEvent &&
-                        getEventId(
-                          selectedEvent
-                        ) === eventId;
+                        String(
+                          getEventId(
+                            selectedEvent
+                          )
+                        ) ===
+                          String(
+                            eventId
+                          );
 
                       return (
                         <button
@@ -1228,8 +1108,6 @@ export default function GraphPage() {
                           }
                         >
 
-                          {/* NODE ICON */}
-
                           <div className="node-icon">
 
                             <Icon
@@ -1238,7 +1116,6 @@ export default function GraphPage() {
 
                           </div>
 
-                          {/* NODE CONTENT */}
 
                           <div className="node-content">
 
@@ -1271,6 +1148,7 @@ export default function GraphPage() {
                     }
                   )}
 
+
                   {/* =================================================
                       CENTER AI CORE
                   ================================================= */}
@@ -1291,6 +1169,7 @@ export default function GraphPage() {
               )}
 
           </div>
+
 
           {/* =================================================
               LEGEND
@@ -1317,15 +1196,12 @@ export default function GraphPage() {
 
         </div>
 
+
         {/* =================================================
             SIDE INSPECTOR
         ================================================= */}
 
         <aside className="graph-inspector">
-
-          {/* =================================================
-              SELECTED EVENT
-          ================================================= */}
 
           {selectedEvent ? (
             <>
@@ -1354,9 +1230,8 @@ export default function GraphPage() {
 
               </div>
 
-              {/* =================================================
-                  SOURCE
-              ================================================= */}
+
+              {/* SOURCE */}
 
               <div className="selected-source">
 
@@ -1369,7 +1244,9 @@ export default function GraphPage() {
                       );
 
                     return (
-                      <Icon size={20} />
+                      <Icon
+                        size={20}
+                      />
                     );
                   })()}
 
@@ -1393,9 +1270,8 @@ export default function GraphPage() {
 
               </div>
 
-              {/* =================================================
-                  TITLE
-              ================================================= */}
+
+              {/* TITLE */}
 
               <h2>
                 {selectedEvent?.title ||
@@ -1403,22 +1279,18 @@ export default function GraphPage() {
                   "Unknown Event"}
               </h2>
 
-              {/* =================================================
-                  DESCRIPTION
-              ================================================= */}
+
+              {/* DESCRIPTION */}
 
               <p className="inspector-description">
                 {selectedEvent?.description ||
                   "No description is available for this evidence event."}
               </p>
 
-              {/* =================================================
-                  EVENT DATA
-              ================================================= */}
+
+              {/* EVENT DATA */}
 
               <div className="inspector-data">
-
-                {/* TIMESTAMP */}
 
                 <div>
 
@@ -1435,7 +1307,6 @@ export default function GraphPage() {
 
                 </div>
 
-                {/* EVENT TYPE */}
 
                 <div>
 
@@ -1452,7 +1323,6 @@ export default function GraphPage() {
 
                 </div>
 
-                {/* RELATED EVENTS */}
 
                 <div>
 
@@ -1471,9 +1341,8 @@ export default function GraphPage() {
 
               </div>
 
-              {/* =================================================
-                  RELEVANCE
-              ================================================= */}
+
+              {/* RELEVANCE */}
 
               <div className="evidence-confidence">
 
@@ -1493,7 +1362,8 @@ export default function GraphPage() {
 
                   <div
                     style={{
-                      width: `${graphConfidence}%`,
+                      width:
+                        `${graphConfidence}%`,
                     }}
                   />
 
@@ -1501,9 +1371,8 @@ export default function GraphPage() {
 
               </div>
 
-              {/* =================================================
-                  RELATIONSHIP DETAILS
-              ================================================= */}
+
+              {/* RELATIONSHIPS */}
 
               {selectedRelationships.length >
                 0 && (
@@ -1516,7 +1385,7 @@ export default function GraphPage() {
                   <div className="relationship-type-list">
 
                     {selectedRelationships
-                      .slice(0, 5)
+                      .slice(0, 8)
                       .map(
                         (
                           relationship,
@@ -1526,6 +1395,7 @@ export default function GraphPage() {
                             key={`${relationship.source}-${relationship.target}-${index}`}
                             className="relationship-type"
                           >
+
                             <GitBranch
                               size={14}
                             />
@@ -1534,6 +1404,7 @@ export default function GraphPage() {
                               {relationship.relationship ||
                                 "RELATED_TO"}
                             </span>
+
                           </div>
                         )
                       )}
@@ -1543,9 +1414,8 @@ export default function GraphPage() {
                 </div>
               )}
 
-              {/* =================================================
-                  CONNECTED EVIDENCE
-              ================================================= */}
+
+              {/* CONNECTED EVIDENCE */}
 
               {selectedRelatedEvents.length >
                 0 && (
@@ -1558,7 +1428,7 @@ export default function GraphPage() {
                   <div className="related-event-list">
 
                     {selectedRelatedEvents
-                      .slice(0, 5)
+                      .slice(0, 8)
                       .map(
                         (
                           relatedEvent
@@ -1585,9 +1455,11 @@ export default function GraphPage() {
                             >
 
                               <div>
+
                                 <RelatedIcon
                                   size={15}
                                 />
+
                               </div>
 
                               <span>
@@ -1610,9 +1482,8 @@ export default function GraphPage() {
                 </div>
               )}
 
-              {/* =================================================
-                  TRACE BUTTON
-              ================================================= */}
+
+              {/* TRACE */}
 
               <button
                 type="button"
@@ -1672,9 +1543,8 @@ export default function GraphPage() {
                 sequence.
               </p>
 
-              {/* =================================================
-                  SUMMARY
-              ================================================= */}
+
+              {/* SUMMARY */}
 
               <div className="graph-summary">
 
@@ -1716,9 +1586,8 @@ export default function GraphPage() {
 
               </div>
 
-              {/* =================================================
-                  GRAPH CONNECTION STATUS
-              ================================================= */}
+
+              {/* GRAPH CONNECTION STATUS */}
 
               <div
                 className={`graph-inspector-status ${

@@ -10,7 +10,12 @@ async function handleResponse(response, defaultMessage) {
 
     try {
       const error = await response.json();
-      message = error.detail || defaultMessage;
+
+      if (typeof error?.detail === "string") {
+        message = error.detail;
+      } else if (error?.detail) {
+        message = JSON.stringify(error.detail);
+      }
     } catch {
       // Keep default message
     }
@@ -27,14 +32,24 @@ async function handleResponse(response, defaultMessage) {
 // ---------------------------------------------------------
 
 export async function getBackendHealth() {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/health`
-  );
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/health`
+    );
 
-  return handleResponse(
-    response,
-    "Backend health check failed"
-  );
+    return await handleResponse(
+      response,
+      "Backend health check failed"
+    );
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Unable to connect to the ChronoGraph backend."
+      );
+    }
+
+    throw error;
+  }
 }
 
 
@@ -43,14 +58,24 @@ export async function getBackendHealth() {
 // ---------------------------------------------------------
 
 export async function getGraphHealth() {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/graph/health`
-  );
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/graph/health`
+    );
 
-  return handleResponse(
-    response,
-    "Graph health check failed"
-  );
+    return await handleResponse(
+      response,
+      "Graph health check failed"
+    );
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Unable to connect to the Neo4j graph service."
+      );
+    }
+
+    throw error;
+  }
 }
 
 
@@ -59,14 +84,24 @@ export async function getGraphHealth() {
 // ---------------------------------------------------------
 
 export async function getEvents() {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/graph/events`
-  );
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/graph/events`
+    );
 
-  return handleResponse(
-    response,
-    "Failed to fetch events"
-  );
+    return await handleResponse(
+      response,
+      "Failed to fetch events"
+    );
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Unable to connect to the ChronoGraph backend."
+      );
+    }
+
+    throw error;
+  }
 }
 
 
@@ -75,6 +110,10 @@ export async function getEvents() {
 // ---------------------------------------------------------
 
 export async function getEvent(eventId) {
+  if (!eventId) {
+    throw new Error("Event ID is required");
+  }
+
   const response = await fetch(
     `${API_BASE_URL}/api/v1/graph/events/${encodeURIComponent(
       eventId
@@ -93,6 +132,10 @@ export async function getEvent(eventId) {
 // ---------------------------------------------------------
 
 export async function getRelatedEvents(eventId) {
+  if (!eventId) {
+    throw new Error("Event ID is required");
+  }
+
   const response = await fetch(
     `${API_BASE_URL}/api/v1/graph/events/${encodeURIComponent(
       eventId
@@ -127,13 +170,21 @@ export async function getGraph() {
 // ---------------------------------------------------------
 
 export async function createEvent(event) {
+  if (!event || typeof event !== "object") {
+    throw new Error(
+      "A valid event object is required"
+    );
+  }
+
   const response = await fetch(
     `${API_BASE_URL}/api/v1/graph/events`,
     {
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
       },
+
       body: JSON.stringify(event),
     }
   );
@@ -154,13 +205,27 @@ export async function createRelationship(
   relatedEventId,
   relationship = "RELATED_TO"
 ) {
+  if (!eventId) {
+    throw new Error(
+      "Source event ID is required"
+    );
+  }
+
+  if (!relatedEventId) {
+    throw new Error(
+      "Related event ID is required"
+    );
+  }
+
   const response = await fetch(
     `${API_BASE_URL}/api/v1/graph/relationships`,
     {
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
       },
+
       body: JSON.stringify({
         event_id: eventId,
         related_event_id: relatedEventId,

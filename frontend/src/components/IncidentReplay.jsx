@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Play,
   Pause,
@@ -7,14 +7,112 @@ import {
   Clock3,
 } from "lucide-react";
 
+function getEventId(event) {
+  return event?.id || event?.event_id || "UNKNOWN";
+}
+
+function getEventTitle(event) {
+  return event?.title || event?.name || "Untitled Event";
+}
+
+function getEventSource(event) {
+  return event?.source || "System";
+}
+
+function getEventDescription(event) {
+  return (
+    event?.description ||
+    "No description available."
+  );
+}
+
+function getEventType(event) {
+  return event?.event_type || "Evidence Event";
+}
+
+function getDate(timestamp) {
+  if (!timestamp) {
+    return null;
+  }
+
+  const date = new Date(timestamp);
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
+}
+
+function formatTime(timestamp) {
+  const date = getDate(timestamp);
+
+  if (!date) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export default function IncidentReplay({ events = [] }) {
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [playing, setPlaying] = useState(false);
 
-  useEffect(() => {
-    if (!playing || events.length === 0) return;
+  // ---------------------------------------------------------
+  // Sort events chronologically
+  // ---------------------------------------------------------
 
-    if (currentIndex >= events.length - 1) {
+  const sortedEvents = useMemo(() => {
+    if (!Array.isArray(events)) {
+      return [];
+    }
+
+    return [...events]
+      .filter((event) =>
+        getDate(event?.timestamp)
+      )
+      .sort(
+        (a, b) =>
+          getDate(a.timestamp) -
+          getDate(b.timestamp)
+      );
+  }, [events]);
+
+  // ---------------------------------------------------------
+  // Keep current index valid if backend data changes
+  // ---------------------------------------------------------
+
+  useEffect(() => {
+    if (sortedEvents.length === 0) {
+      setCurrentIndex(-1);
+      setPlaying(false);
+      return;
+    }
+
+    setCurrentIndex((index) => {
+      if (index >= sortedEvents.length) {
+        return sortedEvents.length - 1;
+      }
+
+      return index;
+    });
+  }, [sortedEvents.length]);
+
+  // ---------------------------------------------------------
+  // Replay timer
+  // ---------------------------------------------------------
+
+  useEffect(() => {
+    if (!playing || sortedEvents.length === 0) {
+      return;
+    }
+
+    if (
+      currentIndex >=
+      sortedEvents.length - 1
+    ) {
       setPlaying(false);
       return;
     }
@@ -24,9 +122,21 @@ export default function IncidentReplay({ events = [] }) {
     }, 1800);
 
     return () => clearTimeout(timer);
-  }, [playing, currentIndex, events.length]);
+  }, [
+    playing,
+    currentIndex,
+    sortedEvents.length,
+  ]);
+
+  // ---------------------------------------------------------
+  // Controls
+  // ---------------------------------------------------------
 
   const startReplay = () => {
+    if (sortedEvents.length === 0) {
+      return;
+    }
+
     setCurrentIndex(0);
     setPlaying(true);
   };
@@ -37,20 +147,105 @@ export default function IncidentReplay({ events = [] }) {
   };
 
   const nextEvent = () => {
-    if (currentIndex < events.length - 1) {
-      setCurrentIndex((index) => index + 1);
+    if (sortedEvents.length === 0) {
+      return;
     }
+
+    setCurrentIndex((index) => {
+      if (index < 0) {
+        return 0;
+      }
+
+      if (index >= sortedEvents.length - 1) {
+        return index;
+      }
+
+      return index + 1;
+    });
+
+    setPlaying(false);
   };
 
+  const toggleReplay = () => {
+    if (sortedEvents.length === 0) {
+      return;
+    }
+
+    if (currentIndex === -1) {
+      startReplay();
+      return;
+    }
+
+    if (
+      currentIndex >=
+      sortedEvents.length - 1
+    ) {
+      setCurrentIndex(0);
+      setPlaying(true);
+      return;
+    }
+
+    setPlaying((value) => !value);
+  };
+
+  // ---------------------------------------------------------
+  // Active event
+  // ---------------------------------------------------------
+
   const activeEvent =
-    currentIndex >= 0 ? events[currentIndex] : null;
+    currentIndex >= 0
+      ? sortedEvents[currentIndex]
+      : null;
+
+  // ---------------------------------------------------------
+  // Empty state
+  // ---------------------------------------------------------
+
+  if (sortedEvents.length === 0) {
+    return (
+      <section className="replay-panel">
+
+        <div className="replay-header">
+
+          <div>
+
+            <p className="eyebrow">
+              INCIDENT TIME MACHINE
+            </p>
+
+            <h2>
+              Replay the incident
+            </h2>
+
+            <p>
+              No timestamped evidence is currently
+              available for replay.
+            </p>
+
+          </div>
+
+          <div className="replay-clock">
+            <Clock3 size={15} />
+            --:--
+          </div>
+
+        </div>
+
+      </section>
+    );
+  }
 
   return (
     <section className="replay-panel">
 
+      {/* =========================
+          HEADER
+      ========================= */}
+
       <div className="replay-header">
 
         <div>
+
           <p className="eyebrow">
             INCIDENT TIME MACHINE
           </p>
@@ -62,38 +257,49 @@ export default function IncidentReplay({ events = [] }) {
           <p>
             Watch the evidence unfold in temporal order.
           </p>
+
         </div>
 
         <div className="replay-clock">
+
           <Clock3 size={15} />
 
           {activeEvent
-            ? new Date(activeEvent.timestamp).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
+            ? formatTime(activeEvent.timestamp)
             : "--:--"}
+
         </div>
 
       </div>
 
 
+      {/* =========================
+          TIMELINE
+      ========================= */}
+
       <div className="replay-track">
 
         <div className="replay-line" />
 
-        {events.map((event, index) => {
+        {sortedEvents.map((event, index) => {
 
-          const active = index === currentIndex;
+          const active =
+            index === currentIndex;
+
           const completed =
             currentIndex >= index;
 
+          const eventId =
+            getEventId(event);
+
           return (
             <div
-              key={event.event_id}
+              key={`${eventId}-${index}`}
               className={`replay-event ${
                 active ? "active" : ""
-              } ${completed ? "completed" : ""}`}
+              } ${
+                completed ? "completed" : ""
+              }`}
             >
 
               <div className="replay-node">
@@ -103,20 +309,15 @@ export default function IncidentReplay({ events = [] }) {
               <div className="replay-event-info">
 
                 <span>
-                  {new Date(
-                    event.timestamp
-                  ).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {formatTime(event.timestamp)}
                 </span>
 
                 <strong>
-                  {event.title}
+                  {getEventTitle(event)}
                 </strong>
 
                 <small>
-                  {event.source}
+                  {getEventSource(event)}
                 </small>
 
               </div>
@@ -128,6 +329,10 @@ export default function IncidentReplay({ events = [] }) {
       </div>
 
 
+      {/* =========================
+          CURRENT EVIDENCE
+      ========================= */}
+
       {activeEvent && (
         <div className="replay-observation">
 
@@ -136,25 +341,25 @@ export default function IncidentReplay({ events = [] }) {
           </span>
 
           <h3>
-            {activeEvent.title}
+            {getEventTitle(activeEvent)}
           </h3>
 
           <p>
-            {activeEvent.description}
+            {getEventDescription(activeEvent)}
           </p>
 
           <div className="replay-meta">
 
             <span>
-              {activeEvent.source}
+              {getEventSource(activeEvent)}
             </span>
 
             <span>
-              {activeEvent.event_type}
+              {getEventType(activeEvent)}
             </span>
 
             <span>
-              {activeEvent.event_id}
+              {getEventId(activeEvent)}
             </span>
 
           </div>
@@ -163,26 +368,28 @@ export default function IncidentReplay({ events = [] }) {
       )}
 
 
+      {/* =========================
+          CONTROLS
+      ========================= */}
+
       <div className="replay-controls">
 
         <button
+          type="button"
           onClick={resetReplay}
-          title="Reset"
+          title="Reset replay"
         >
           <RotateCcw size={15} />
           Reset
         </button>
 
+
         <button
+          type="button"
           className="replay-primary"
-          onClick={() => {
-            if (currentIndex === -1) {
-              startReplay();
-            } else {
-              setPlaying((value) => !value);
-            }
-          }}
+          onClick={toggleReplay}
         >
+
           {playing ? (
             <>
               <Pause size={15} />
@@ -191,17 +398,25 @@ export default function IncidentReplay({ events = [] }) {
           ) : (
             <>
               <Play size={15} />
+
               {currentIndex === -1
                 ? "Play incident"
-                : "Resume"}
+                : currentIndex >=
+                    sortedEvents.length - 1
+                  ? "Replay again"
+                  : "Resume"}
             </>
           )}
+
         </button>
 
+
         <button
+          type="button"
           onClick={nextEvent}
           disabled={
-            currentIndex >= events.length - 1
+            currentIndex >=
+            sortedEvents.length - 1
           }
         >
           <SkipForward size={15} />

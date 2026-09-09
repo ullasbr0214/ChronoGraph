@@ -4,21 +4,75 @@ import {
   Mail,
   ArrowDown,
   Brain,
+  ShieldCheck,
+  Server,
+  Network,
 } from "lucide-react";
 
 const icons = {
-  Slack: MessageSquare,
-  GitHub: GitBranch,
-  Email: Mail,
+  slack: MessageSquare,
+  github: GitBranch,
+  email: Mail,
+  "system log": Server,
+  "security log": ShieldCheck,
+  "network log": Network,
+  "application log": Server,
 };
 
-export default function RootCausePath({ events = [] }) {
-  if (!events.length) return null;
+function getEventId(event) {
+  return event?.id || event?.event_id || "UNKNOWN";
+}
 
-  const sortedEvents = [...events].sort(
-    (a, b) =>
-      new Date(a.timestamp) - new Date(b.timestamp)
-  );
+function getEventTitle(event) {
+  return event?.title || event?.name || "Untitled Event";
+}
+
+function getEventSource(event) {
+  return event?.source || "System";
+}
+
+function getValidDate(timestamp) {
+  if (!timestamp) {
+    return null;
+  }
+
+  const date = new Date(timestamp);
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
+}
+
+function formatTime(timestamp) {
+  const date = getValidDate(timestamp);
+
+  if (!date) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export default function RootCausePath({ events = [] }) {
+  if (!Array.isArray(events) || events.length === 0) {
+    return null;
+  }
+
+  const sortedEvents = [...events]
+    .filter((event) => getValidDate(event?.timestamp))
+    .sort(
+      (a, b) =>
+        getValidDate(a.timestamp) -
+        getValidDate(b.timestamp)
+    );
+
+  if (sortedEvents.length === 0) {
+    return null;
+  }
 
   const stages = [
     {
@@ -35,12 +89,19 @@ export default function RootCausePath({ events = [] }) {
     },
   ];
 
+  const visibleEvents = sortedEvents.slice(0, 3);
+
   return (
     <section className="root-cause-panel">
+
+      {/* =========================
+          HEADER
+      ========================= */}
 
       <div className="root-cause-header">
 
         <div>
+
           <p className="eyebrow">
             ROOT CAUSE PATH
           </p>
@@ -53,81 +114,107 @@ export default function RootCausePath({ events = [] }) {
             Chronological evidence path reconstructed
             from the available events.
           </p>
+
         </div>
 
         <div className="root-score">
-          <span>PATH SCORE</span>
-          <strong>87%</strong>
+
+          <span>
+            PATH SCORE
+          </span>
+
+          <strong>
+            87%
+          </strong>
+
         </div>
 
       </div>
 
 
+      {/* =========================
+          CAUSE PATH
+      ========================= */}
+
       <div className="cause-path">
 
-        {sortedEvents.slice(0, 3).map(
-          (event, index) => {
+        {visibleEvents.map((event, index) => {
 
-            const Icon =
-              icons[event.source] || GitBranch;
+          const source =
+            getEventSource(event);
 
-            const stage =
-              stages[index] || stages[2];
+          const Icon =
+            icons[source.toLowerCase()] ||
+            GitBranch;
 
-            return (
-              <div
-                className="cause-step"
-                key={event.event_id}
-              >
+          const stage =
+            stages[index] || stages[2];
 
-                <div className="cause-stage">
-                  {stage.label}
-                </div>
+          const eventId =
+            getEventId(event);
 
+          const eventTitle =
+            getEventTitle(event);
 
-                <div className="cause-node">
-                  <Icon size={18} />
-                </div>
+          return (
+            <div
+              className="cause-step"
+              key={`${eventId}-${index}`}
+            >
 
+              {/* STAGE */}
 
-                <div className="cause-content">
-
-                  <span>
-                    {event.source} · {event.event_id}
-                  </span>
-
-                  <h3>
-                    {event.title}
-                  </h3>
-
-                  <p>
-                    {stage.description}
-                  </p>
-
-                  <small>
-                    {new Date(
-                      event.timestamp
-                    ).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </small>
-
-                </div>
+              <div className="cause-stage">
+                {stage.label}
+              </div>
 
 
-                {index <
-                  Math.min(sortedEvents.length, 3) - 1 && (
-                  <div className="cause-connector">
-                    <ArrowDown size={15} />
-                  </div>
-                )}
+              {/* NODE */}
+
+              <div className="cause-node">
+                <Icon size={18} />
+              </div>
+
+
+              {/* CONTENT */}
+
+              <div className="cause-content">
+
+                <span>
+                  {source} · {eventId}
+                </span>
+
+                <h3>
+                  {eventTitle}
+                </h3>
+
+                <p>
+                  {stage.description}
+                </p>
+
+                <small>
+                  {formatTime(event.timestamp)}
+                </small>
 
               </div>
-            )
-          }
-        )}
 
+
+              {/* CONNECTOR */}
+
+              {index < visibleEvents.length - 1 && (
+                <div className="cause-connector">
+                  <ArrowDown size={15} />
+                </div>
+              )}
+
+            </div>
+          );
+        })}
+
+
+        {/* =========================
+            AI CONCLUSION
+        ========================= */}
 
         <div className="cause-conclusion">
 

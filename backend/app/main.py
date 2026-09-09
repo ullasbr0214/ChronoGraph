@@ -1,26 +1,34 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import settings
 from app.api.routes.graph import router as graph_router
 
 
+# =========================================================
+# CREATE FASTAPI APPLICATION
+# =========================================================
+
 app = FastAPI(
-    title=settings.app_name,
-    description="Temporal GraphRAG backend for enterprise forensic analysis",
-    version=settings.app_version,
+    title="ChronoGraph API",
+    description=(
+        "Temporal intelligence and incident "
+        "reconstruction backend."
+    ),
+    version="1.0.0",
 )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # CORS
-# ---------------------------------------------------------
+# =========================================================
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -28,21 +36,35 @@ app.add_middleware(
 )
 
 
-# ---------------------------------------------------------
-# HEALTH CHECK
-# ---------------------------------------------------------
+# =========================================================
+# ROOT
+# =========================================================
 
-@app.get("/api/v1/health")
-def health_check():
+@app.get("/")
+def root():
     return {
-        "status": "healthy",
-        "service": settings.app_name,
-        "version": settings.app_version,
+        "name": "ChronoGraph API",
+        "status": "online",
+        "version": "1.0.0",
     }
 
 
-# ---------------------------------------------------------
-# GRAPH ROUTES
-# ---------------------------------------------------------
+# =========================================================
+# API HEALTH
+# =========================================================
 
-app.include_router(graph_router)
+@app.get("/api/v1/health")
+def health():
+    return {
+        "status": "healthy",
+        "service": "ChronoGraph API",
+    }
+
+
+# =========================================================
+# GRAPH ROUTER
+# =========================================================
+
+app.include_router(
+    graph_router
+)

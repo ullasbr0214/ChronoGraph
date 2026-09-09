@@ -6,51 +6,101 @@ import {
   Database,
 } from "lucide-react";
 
+import { NavLink } from "react-router-dom";
+
 export default function Sidebar() {
+  const navClass = ({ isActive }) =>
+    `nav-item ${isActive ? "active" : ""}`;
+
   return (
     <aside className="sidebar">
 
+      {/* =====================================================
+          BRAND
+      ===================================================== */}
+
       <div className="brand">
+
         <div className="brand-mark">
           <Network size={19} />
         </div>
 
         <div>
           <h1>ChronoGraph</h1>
-          <span>TEMPORAL INTELLIGENCE</span>
+
+          <span>
+            TEMPORAL INTELLIGENCE
+          </span>
         </div>
+
       </div>
+
+
+      {/* =====================================================
+          SYSTEM STATUS
+      ===================================================== */}
 
       <div className="system-status">
+
         <span className="status-dot" />
+
         SYSTEM ONLINE
+
       </div>
 
-      <p className="sidebar-label">WORKSPACE</p>
+
+      {/* =====================================================
+          NAVIGATION
+      ===================================================== */}
+
+      <p className="sidebar-label">
+        WORKSPACE
+      </p>
 
       <nav>
 
-        <a href="/" className="nav-item active">
+        <NavLink
+          to="/"
+          end
+          className={navClass}
+        >
           <LayoutDashboard size={15} />
           Overview
-        </a>
+        </NavLink>
 
-        <a href="/timeline" className="nav-item">
+
+        <NavLink
+          to="/timeline"
+          className={navClass}
+        >
           <Clock3 size={15} />
           Timeline
-        </a>
+        </NavLink>
 
-        <a href="/graph" className="nav-item">
+
+        <NavLink
+          to="/graph"
+          className={navClass}
+        >
           <Network size={15} />
           Graph Explorer
-        </a>
+        </NavLink>
 
-        <a href="/investigation" className="nav-item">
+
+        <NavLink
+          to="/investigation"
+          className={navClass}
+        >
           <Search size={15} />
           Investigation
-        </a>
+        </NavLink>
 
       </nav>
+
+
+      {/* =====================================================
+          ACTIVE CASE
+      ===================================================== */}
 
       <div className="case-card">
 
@@ -68,8 +118,17 @@ export default function Sidebar() {
 
       </div>
 
+
+      {/* =====================================================
+          FOOTER
+      ===================================================== */}
+
       <div className="sidebar-footer">
-        <Database size={11} /> TEMPORAL ENGINE · LOCAL
+
+        <Database size={11} />
+
+        TEMPORAL ENGINE · LOCAL
+
       </div>
 
     </aside>

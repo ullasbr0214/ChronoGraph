@@ -4,7 +4,12 @@ export default function TopBar() {
   return (
     <header className="topbar">
 
-      <div>
+      {/* =====================================================
+          CASE INFORMATION
+      ===================================================== */}
+
+      <div className="topbar-title">
+
         <p className="eyebrow">
           CASE / CG-2026-001
         </p>
@@ -12,28 +17,61 @@ export default function TopBar() {
         <h2>
           Investigation Console
         </h2>
+
       </div>
+
+
+      {/* =====================================================
+          ACTIONS
+      ===================================================== */}
 
       <div className="topbar-actions">
 
+        {/* SEARCH */}
+
         <div className="search-box">
+
           <Search size={15} />
 
           <input
-            type="text"
+            type="search"
             placeholder="Search events, sources..."
+            aria-label="Search events and sources"
           />
 
-          <span>⌘ K</span>
+          <span>
+            ⌘ K
+          </span>
+
         </div>
 
-        <button className="icon-button">
+
+        {/* NOTIFICATIONS */}
+
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Notifications"
+          title="Notifications"
+        >
           <Bell size={16} />
         </button>
 
-        <div className="live-status">
-          <Circle size={7} fill="currentColor" />
+
+        {/* LIVE STATUS */}
+
+        <div
+          className="live-status"
+          aria-label="System live"
+        >
+
+          <Circle
+            size={7}
+            fill="currentColor"
+          />
+
           LIVE
+
         </div>
 
       </div>

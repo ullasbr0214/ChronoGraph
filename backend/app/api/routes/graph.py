@@ -9,9 +9,9 @@ router = APIRouter(
 )
 
 
-# ---------------------------------------------------------
-# Graph health
-# ---------------------------------------------------------
+# =========================================================
+# GRAPH HEALTH
+# =========================================================
 
 @router.get("/health")
 def graph_health():
@@ -23,7 +23,11 @@ def graph_health():
         connected = database.verify_connection()
 
         return {
-            "status": "healthy" if connected else "unhealthy",
+            "status": (
+                "healthy"
+                if connected
+                else "unhealthy"
+            ),
             "neo4j_connected": connected,
         }
 
@@ -38,9 +42,9 @@ def graph_health():
             database.close()
 
 
-# ---------------------------------------------------------
-# Get all events
-# ---------------------------------------------------------
+# =========================================================
+# GET ALL EVENTS
+# =========================================================
 
 @router.get("/events")
 def get_events():
@@ -68,9 +72,9 @@ def get_events():
             database.close()
 
 
-# ---------------------------------------------------------
-# Get one event
-# ---------------------------------------------------------
+# =========================================================
+# GET ONE EVENT
+# =========================================================
 
 @router.get("/events/{event_id}")
 def get_event(event_id: str):
@@ -106,9 +110,9 @@ def get_event(event_id: str):
             database.close()
 
 
-# ---------------------------------------------------------
-# Get related events
-# ---------------------------------------------------------
+# =========================================================
+# GET RELATED EVENTS
+# =========================================================
 
 @router.get("/events/{event_id}/related")
 def get_related_events(event_id: str):
@@ -125,7 +129,9 @@ def get_related_events(event_id: str):
                 detail=f"Event '{event_id}' not found",
             )
 
-        related_events = database.get_related_events(event_id)
+        related_events = database.get_related_events(
+            event_id
+        )
 
         return {
             "success": True,
@@ -140,7 +146,10 @@ def get_related_events(event_id: str):
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve related events: {str(error)}",
+            detail=(
+                "Failed to retrieve related events: "
+                f"{str(error)}"
+            ),
         )
 
     finally:
@@ -148,20 +157,18 @@ def get_related_events(event_id: str):
             database.close()
 
 
-# ---------------------------------------------------------
-# Get complete graph
-# ---------------------------------------------------------
+# =========================================================
+# GET COMPLETE GRAPH
+# =========================================================
 
 @router.get("/")
 def get_graph():
     """
-    Return the complete temporal graph.
+    Return the complete ChronoGraph graph.
 
-    The current Neo4j database class provides:
-    - get_events()
-    - get_related_events()
-
-    We use those methods to build the graph response.
+    Uses Neo4jDatabase.get_graph() so the graph returned
+    to the frontend contains the actual Neo4j nodes and
+    relationships.
     """
 
     database = None
@@ -169,55 +176,23 @@ def get_graph():
     try:
         database = Neo4jDatabase()
 
-        # Get all events
-        events = database.get_events()
+        graph = database.get_graph()
 
-        relationships = []
-        relationship_keys = set()
+        nodes = graph.get(
+            "nodes",
+            []
+        )
 
-        # Build relationships from Neo4j
-        for event in events:
-            event_id = event.get("id")
-
-            if not event_id:
-                continue
-
-            related_events = database.get_related_events(event_id)
-
-            for related in related_events:
-                related_id = related.get("id")
-                relationship_type = (
-                    related.get("relationship")
-                    or "RELATED_TO"
-                )
-
-                if not related_id:
-                    continue
-
-                relationship_key = (
-                    event_id,
-                    related_id,
-                    relationship_type,
-                )
-
-                if relationship_key in relationship_keys:
-                    continue
-
-                relationship_keys.add(relationship_key)
-
-                relationships.append(
-                    {
-                        "source": event_id,
-                        "target": related_id,
-                        "relationship": relationship_type,
-                    }
-                )
+        relationships = graph.get(
+            "relationships",
+            []
+        )
 
         return {
             "success": True,
-            "count": len(events),
-            "nodes": events,
-            "events": events,
+            "count": len(nodes),
+            "nodes": nodes,
+            "events": nodes,
             "relationships": relationships,
         }
 
@@ -225,6 +200,118 @@ def get_graph():
         raise HTTPException(
             status_code=500,
             detail=f"Failed to retrieve graph: {str(error)}",
+        )
+
+    finally:
+        if database:
+            database.close()
+
+
+# =========================================================
+# CREATE EVENT
+# =========================================================
+
+@router.post("/events")
+def create_event(event: dict):
+    database = None
+
+    try:
+        if not event:
+            raise HTTPException(
+                status_code=400,
+                detail="Event data is required",
+            )
+
+        database = Neo4jDatabase()
+
+        created_event = database.create_event(
+            event
+        )
+
+        if not created_event:
+            raise HTTPException(
+                status_code=500,
+                detail="Event could not be created",
+            )
+
+        return {
+            "success": True,
+            "event": created_event,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create event: {str(error)}",
+        )
+
+    finally:
+        if database:
+            database.close()
+
+
+# =========================================================
+# CREATE RELATIONSHIP
+# =========================================================
+
+@router.post("/relationships")
+def create_relationship(data: dict):
+    database = None
+
+    try:
+        event_id = data.get("event_id")
+        related_event_id = data.get(
+            "related_event_id"
+        )
+        relationship = data.get(
+            "relationship",
+            "RELATED_TO",
+        )
+
+        if not event_id:
+            raise HTTPException(
+                status_code=400,
+                detail="event_id is required",
+            )
+
+        if not related_event_id:
+            raise HTTPException(
+                status_code=400,
+                detail="related_event_id is required",
+            )
+
+        database = Neo4jDatabase()
+
+        result = database.create_relationship(
+            event_id,
+            related_event_id,
+            relationship,
+        )
+
+        return {
+            "success": True,
+            "relationship": result,
+        }
+
+    except HTTPException:
+        raise
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to create relationship: "
+                f"{str(error)}"
+            ),
         )
 
     finally:

@@ -6,41 +6,57 @@ from app.core.config import settings
 class Neo4jDatabase:
     """Handles all communication between ChronoGraph and Neo4j."""
 
+    # =========================================================
+    # INITIALIZE
+    # =========================================================
+
     def __init__(self):
         self.uri = settings.neo4j_uri
         self.username = settings.neo4j_username
         self.password = settings.neo4j_password
 
         if not self.uri:
-            raise ValueError("NEO4J_URI is not configured")
+            raise ValueError(
+                "NEO4J_URI is not configured"
+            )
 
         if not self.username:
-            raise ValueError("NEO4J_USERNAME is not configured")
+            raise ValueError(
+                "NEO4J_USERNAME is not configured"
+            )
 
         if not self.password:
-            raise ValueError("NEO4J_PASSWORD is not configured")
+            raise ValueError(
+                "NEO4J_PASSWORD is not configured"
+            )
 
         self.driver = GraphDatabase.driver(
             self.uri,
-            auth=(self.username, self.password),
+            auth=(
+                self.username,
+                self.password,
+            ),
         )
 
-    # ---------------------------------------------------------
-    # CLOSE CONNECTION
-    # ---------------------------------------------------------
+    # =========================================================
+    # CLOSE
+    # =========================================================
 
     def close(self):
         """Close the Neo4j driver."""
-        self.driver.close()
 
-    # ---------------------------------------------------------
+        if self.driver:
+            self.driver.close()
+
+    # =========================================================
     # VERIFY CONNECTION
-    # ---------------------------------------------------------
+    # =========================================================
 
     def verify_connection(self):
         """Verify that ChronoGraph can connect to Neo4j."""
 
         with self.driver.session() as session:
+
             result = session.run(
                 "RETURN 1 AS connected"
             )
@@ -52,12 +68,14 @@ class Neo4jDatabase:
                 and record["connected"] == 1
             )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # GET ALL EVENTS
-    # ---------------------------------------------------------
+    # =========================================================
 
     def get_events(self):
-        """Return all Event nodes ordered by timestamp."""
+        """
+        Return all Event nodes ordered chronologically.
+        """
 
         query = """
         MATCH (e:Event)
@@ -70,7 +88,7 @@ class Neo4jDatabase:
             e.timestamp AS timestamp,
             e.event_type AS event_type
 
-        ORDER BY e.timestamp
+        ORDER BY e.timestamp ASC
         """
 
         with self.driver.session() as session:
@@ -82,12 +100,17 @@ class Neo4jDatabase:
                 for record in result
             ]
 
-    # ---------------------------------------------------------
+    # =========================================================
     # GET ONE EVENT
-    # ---------------------------------------------------------
+    # =========================================================
 
     def get_event(self, event_id):
-        """Return a single Event by ID."""
+        """
+        Return a single Event node by ID.
+        """
+
+        if not event_id:
+            return None
 
         query = """
         MATCH (e:Event {id: $event_id})
@@ -115,12 +138,22 @@ class Neo4jDatabase:
 
             return record.data()
 
-    # ---------------------------------------------------------
+    # =========================================================
     # GET RELATED EVENTS
-    # ---------------------------------------------------------
+    # =========================================================
 
     def get_related_events(self, event_id):
-        """Return events connected to a specific Event."""
+        """
+        Return all Event nodes connected to the
+        specified Event.
+
+        Relationship direction is intentionally ignored
+        here so both incoming and outgoing relationships
+        are returned.
+        """
+
+        if not event_id:
+            return []
 
         query = """
         MATCH (e:Event {id: $event_id})-[r]-(related:Event)
@@ -134,7 +167,7 @@ class Neo4jDatabase:
             related.event_type AS event_type,
             type(r) AS relationship
 
-        ORDER BY related.timestamp
+        ORDER BY related.timestamp ASC
         """
 
         with self.driver.session() as session:
@@ -149,15 +182,21 @@ class Neo4jDatabase:
                 for record in result
             ]
 
-    # ---------------------------------------------------------
+    # =========================================================
     # GET COMPLETE GRAPH
-    # ---------------------------------------------------------
+    # =========================================================
 
     def get_graph(self):
         """
-        Return all Event nodes and their relationships.
+        Return the complete ChronoGraph graph.
 
-        Used by the Graph API and frontend graph explorer.
+        Includes:
+
+        - Event nodes
+        - Real Neo4j relationships
+        - Relationship types
+
+        No relationships are artificially generated.
         """
 
         nodes_query = """
@@ -171,7 +210,7 @@ class Neo4jDatabase:
             e.timestamp AS timestamp,
             e.event_type AS event_type
 
-        ORDER BY e.timestamp
+        ORDER BY e.timestamp ASC
         """
 
         relationships_query = """
@@ -185,9 +224,9 @@ class Neo4jDatabase:
 
         with self.driver.session() as session:
 
-            # ---------------------------------------------
-            # EVENTS / NODES
-            # ---------------------------------------------
+            # -------------------------------------------------
+            # NODES
+            # -------------------------------------------------
 
             nodes_result = session.run(
                 nodes_query
@@ -198,9 +237,9 @@ class Neo4jDatabase:
                 for record in nodes_result
             ]
 
-            # ---------------------------------------------
+            # -------------------------------------------------
             # RELATIONSHIPS
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             relationships_result = session.run(
                 relationships_query
@@ -216,12 +255,32 @@ class Neo4jDatabase:
                 "relationships": relationships,
             }
 
-    # ---------------------------------------------------------
+    # =========================================================
     # CREATE / UPDATE EVENT
-    # ---------------------------------------------------------
+    # =========================================================
 
     def create_event(self, event):
-        """Create or update an Event node."""
+        """
+        Create or update an Event node.
+
+        MERGE ensures that an existing event with the
+        same ID is updated instead of duplicated.
+        """
+
+        if not event:
+            raise ValueError(
+                "Event data is required"
+            )
+
+        event_id = (
+            event.get("id")
+            or event.get("event_id")
+        )
+
+        if not event_id:
+            raise ValueError(
+                "Event ID is required"
+            )
 
         query = """
         MERGE (e:Event {id: $id})
@@ -246,17 +305,29 @@ class Neo4jDatabase:
 
             result = session.run(
                 query,
-                id=event["id"],
-                source=event.get("source"),
-                title=event.get("title"),
+
+                id=event_id,
+
+                source=event.get(
+                    "source"
+                ),
+
+                title=event.get(
+                    "title"
+                ),
+
                 description=event.get(
                     "description",
-                    ""
+                    "",
                 ),
-                timestamp=event.get("timestamp"),
+
+                timestamp=event.get(
+                    "timestamp"
+                ),
+
                 event_type=event.get(
                     "event_type",
-                    "Evidence Event"
+                    "Evidence Event",
                 ),
             )
 
@@ -268,9 +339,9 @@ class Neo4jDatabase:
                 else None
             )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # CREATE RELATIONSHIP
-    # ---------------------------------------------------------
+    # =========================================================
 
     def create_relationship(
         self,
@@ -278,7 +349,29 @@ class Neo4jDatabase:
         related_event_id,
         relationship="RELATED_TO",
     ):
-        """Create a relationship between two Event nodes."""
+        """
+        Create a directional relationship between
+        two Event nodes.
+        """
+
+        if not event_id:
+            raise ValueError(
+                "Source event ID is required"
+            )
+
+        if not related_event_id:
+            raise ValueError(
+                "Target event ID is required"
+            )
+
+        if event_id == related_event_id:
+            raise ValueError(
+                "An event cannot be related to itself"
+            )
+
+        # -----------------------------------------------------
+        # Allowed relationship types
+        # -----------------------------------------------------
 
         allowed_relationships = {
             "RELATED_TO",
@@ -289,10 +382,19 @@ class Neo4jDatabase:
             "PRECEDES",
         }
 
+        relationship = str(
+            relationship or "RELATED_TO"
+        ).upper()
+
         if relationship not in allowed_relationships:
             raise ValueError(
-                f"Invalid relationship type: {relationship}"
+                f"Invalid relationship type: "
+                f"{relationship}"
             )
+
+        # -----------------------------------------------------
+        # Relationship query
+        # -----------------------------------------------------
 
         query = f"""
         MATCH (a:Event {{id: $event_id}})
@@ -301,8 +403,8 @@ class Neo4jDatabase:
         MERGE (a)-[r:{relationship}]->(b)
 
         RETURN
-            a.id AS from_id,
-            b.id AS to_id,
+            a.id AS source,
+            b.id AS target,
             type(r) AS relationship
         """
 
@@ -310,14 +412,18 @@ class Neo4jDatabase:
 
             result = session.run(
                 query,
+
                 event_id=event_id,
+
                 related_event_id=related_event_id,
             )
 
             record = result.single()
 
-            return (
-                record.data()
-                if record
-                else None
-            )
+            if not record:
+                raise ValueError(
+                    "One or both event IDs "
+                    "were not found in Neo4j"
+                )
+
+            return record.data()
