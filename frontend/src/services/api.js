@@ -89,11 +89,21 @@ export async function getEvents() {
       `${API_BASE_URL}/api/v1/graph/events`
     );
 
-    return await handleResponse(
+    const data = await handleResponse(
       response,
       "Failed to fetch events"
     );
+
+    console.log("🔥 EVENTS FROM BACKEND:", data);
+
+    return Array.isArray(data)
+      ? data
+      : Array.isArray(data?.events)
+        ? data.events
+        : [];
   } catch (error) {
+    console.error("🔥 GET EVENTS ERROR:", error);
+
     if (error instanceof TypeError) {
       throw new Error(
         "Unable to connect to the ChronoGraph backend."
@@ -103,7 +113,6 @@ export async function getEvents() {
     throw error;
   }
 }
-
 
 // ---------------------------------------------------------
 // Get one event

@@ -2,6 +2,8 @@ export function generateHypothesis(
   gap,
   candidates = []
 ) {
+  console.log("🔥 HYPOTHESIS INPUT GAP:", gap);
+console.log("🔥 HYPOTHESIS INPUT CANDIDATES:", candidates);
   if (!gap) {
     return {
       title: "Insufficient evidence",
