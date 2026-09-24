@@ -121,6 +121,7 @@ export default function TimelinePage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [dataMode, setDataMode] = useState("loading");
 
   // -------------------------------------------------------
   // Load events from Neo4j
@@ -136,6 +137,7 @@ export default function TimelinePage() {
       const normalized = normalizeEvents(data);
 
       setEvents(normalized);
+      setDataMode(data?.mode || "neo4j");
     } catch (err) {
       console.error("Failed to load timeline events:", err);
 
@@ -243,6 +245,10 @@ export default function TimelinePage() {
           {loading ? "Refreshing..." : "Refresh"}
         </button>
 
+        <span className="timeline-mode-badge">
+          {dataMode === "neo4j" ? "NEO4J LIVE" : dataMode === "demo" ? "LOCAL EVIDENCE" : "CONNECTING"}
+        </span>
+
       </div>
 
 
@@ -314,7 +320,7 @@ export default function TimelinePage() {
 
       {loading && (
         <div className="timeline-state">
-          Loading evidence from Neo4j...
+          Loading temporal evidence...
         </div>
       )}
 

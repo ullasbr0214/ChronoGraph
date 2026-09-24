@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [relationships, setRelationships] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [dataMode, setDataMode] = useState("loading");
 
   // =========================================================
   // LOAD GRAPH DATA FROM BACKEND
@@ -48,16 +49,15 @@ export default function Dashboard() {
 
         setEvents(sortedEvents);
         setRelationships(backendRelationships);
+        setDataMode(response?.mode || "neo4j");
       } catch (error) {
         console.error(
           "Failed to load dashboard data:",
           error
         );
 
-        setError(
-          error.message ||
-            "Failed to load dashboard data"
-        );
+        setError(error.message || "Failed to load dashboard data");
+        setDataMode("error");
       } finally {
         setIsLoading(false);
       }
@@ -144,8 +144,11 @@ export default function Dashboard() {
   // returned by the backend.
   // =========================================================
 
-  const sequenceConfidence =
-    events.length > 0 ? 87 : 0;
+  const sequenceConfidence = useMemo(() => {
+    if (!events.length) return 0;
+    const expected = Math.max(1, events.length - 1);
+    return Math.round(Math.min(1, relationships.length / expected) * 100);
+  }, [events.length, relationships.length]);
 
   // =========================================================
   // RECENT EVENTS
@@ -310,7 +313,7 @@ export default function Dashboard() {
           </strong>
 
           <small>
-            Live Neo4j evidence
+            {dataMode === "neo4j" ? "Live Neo4j evidence" : "Bundled local evidence"}
           </small>
 
         </div>

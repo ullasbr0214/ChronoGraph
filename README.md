@@ -1,95 +1,74 @@
 # ChronoGraph
-Temporal GraphRAG system for enterprise historical forensics using Neo4j, LLMs, and temporal retrieval.
-# ChronoGraph
 
-### Intelligent Event Investigation & Temporal Knowledge Graph
+ChronoGraph is a temporal graph investigation console for reconstructing an incident from timestamped evidence and graph relationships.
 
-ChronoGraph is an AI-assisted investigation platform designed to organize events, relationships, and timelines into a connected knowledge graph.
+## Stack
 
-The system uses a graph-based approach to help investigators understand how different events are connected, explore related events, and analyze information chronologically.
+- React + Vite frontend
+- FastAPI backend
+- Neo4j graph database
+- Local evidence fallback for offline demonstrations
 
----
+## Run the project
 
-## 🚀 Project Overview
+For a Windows review/demo, you can also run `RUN_DEMO.bat`. It starts the backend in local evidence mode and the Vite frontend in separate terminals.
 
-Traditional investigation systems often store events as separate records, making it difficult to understand relationships between them.
+### 1. Backend
 
-ChronoGraph addresses this problem by representing investigation data as a **temporal knowledge graph**, where:
+Open a terminal in `backend`:
 
-- Events are represented as graph nodes
-- Relationships are represented as graph edges
-- Events contain timestamps and metadata
-- Related events can be explored through the graph
-- Investigators can analyze events through a visual interface
+```bash
+python -m uvicorn app.main:app --reload
+```
 
-The goal is to provide a clear and interactive way to investigate complex event sequences.
+Backend: `http://127.0.0.1:8000`
+Swagger: `http://127.0.0.1:8000/docs`
 
----
+The backend now has a graceful local-evidence fallback. If Neo4j is unavailable, the API continues serving the bundled review case instead of returning a 500 error.
 
-## 🎯 Key Features
+### 2. Frontend
 
-### Event Management
+Open a second terminal in `frontend`:
 
-- Create investigation events
-- Store event metadata
-- Retrieve individual events
-- Retrieve all events
-- Sort events chronologically
+```bash
+npm install
+npm run dev
+```
 
-### Relationship Management
+Frontend: `http://localhost:5173`
 
-ChronoGraph supports relationships between events such as:
+## Neo4j
 
-- `RELATED_TO`
-- `CAUSED_BY`
-- `LEADS_TO`
-- `SUPPORTS`
-- `CONTRADICTS`
-- `PRECEDES`
+For live Neo4j data, create `backend/.env` from `.env.example` and set:
 
-### Temporal Investigation
+```env
+NEO4J_URI=neo4j+s://YOUR_INSTANCE.databases.neo4j.io
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=YOUR_PASSWORD
+CHRONOGRAPH_DEMO_MODE=false
+```
 
-Events contain timestamps that allow the system to:
+If the Aura hostname is unavailable, ChronoGraph automatically falls back to local evidence. This keeps the UI usable for review/demo purposes while clearly showing `LOCAL EVIDENCE` instead of claiming a live graph connection.
 
-- Organize events chronologically
-- Explore event sequences
-- Identify relationships between events
-- Build investigation timelines
+To intentionally use local mode:
 
-### Graph Visualization
+```env
+CHRONOGRAPH_DEMO_MODE=true
+```
 
-The frontend provides a visual interface for exploring the event graph and investigation timeline.
+## Seed Neo4j
 
----
+After configuring a valid Neo4j connection:
 
-## 🏗️ Architecture
+```bash
+python seed_database.py
+```
 
-```text
-                    ┌──────────────────────┐
-                    │      React Frontend  │
-                    │                      │
-                    │  Dashboard           │
-                    │  Investigation       │
-                    │  Graph View          │
-                    │  Timeline            │
-                    └──────────┬───────────┘
-                               │
-                               │ API
-                               ▼
-                    ┌──────────────────────┐
-                    │       Backend        │
-                    │                      │
-                    │  Investigation Logic │
-                    │  Event Management    │
-                    │  API Endpoints       │
-                    └──────────┬───────────┘
-                               │
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │      Neo4j Aura      │
-                    │                      │
-                    │  Event Nodes         │
-                    │  Relationships       │
-                    │  Temporal Data       │
-                    └──────────────────────┘
+The seed creates the review case with four events and three graph relationships.
+
+## Main pages
+
+- `/` — Overview dashboard
+- `/timeline` — chronological evidence timeline
+- `/graph` — graph relationship explorer
+- `/investigation` — investigation console with evidence filtering, relationship inspection, temporal gaps and sequence confidence

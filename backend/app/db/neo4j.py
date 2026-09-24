@@ -1,5 +1,3 @@
-from neo4j import GraphDatabase
-
 from app.core.config import settings
 
 
@@ -29,6 +27,13 @@ class Neo4jDatabase:
             raise ValueError(
                 "NEO4J_PASSWORD is not configured"
             )
+
+        try:
+            from neo4j import GraphDatabase
+        except ImportError as error:
+            raise RuntimeError(
+                "Neo4j Python driver is not installed. Run: pip install neo4j"
+            ) from error
 
         self.driver = GraphDatabase.driver(
             self.uri,

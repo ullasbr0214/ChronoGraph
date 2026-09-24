@@ -178,6 +178,7 @@ export default function GraphPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [error, setError] = useState("");
+  const [dataMode, setDataMode] = useState("loading");
 
   const [zoom, setZoom] = useState(100);
 
@@ -198,6 +199,8 @@ export default function GraphPage() {
         "CHRONOGRAPH GRAPH RESPONSE:",
         response
       );
+
+      setDataMode(response?.mode || "neo4j");
 
       const backendNodes = Array.isArray(
         response?.nodes
@@ -1597,20 +1600,18 @@ export default function GraphPage() {
                 }`}
               >
 
-                {error ? (
-                  <AlertTriangle
-                    size={16}
-                  />
+                {dataMode === "neo4j" ? (
+                  <ShieldCheck size={16} />
                 ) : (
-                  <ShieldCheck
-                    size={16}
-                  />
+                  <AlertTriangle size={16} />
                 )}
 
                 <span>
-                  {error
-                    ? "Neo4j graph unavailable"
-                    : "Neo4j graph connected"}
+                  {dataMode === "neo4j"
+                    ? "Neo4j graph connected"
+                    : dataMode === "demo"
+                    ? "Local evidence mode"
+                    : "Neo4j graph unavailable"}
                 </span>
 
               </div>
