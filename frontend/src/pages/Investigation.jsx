@@ -7,7 +7,6 @@ import {
   Clock3,
   Database,
   Search,
-  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 

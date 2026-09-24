@@ -478,7 +478,7 @@ export default function TimelinePage() {
           </span>
 
           <span>
-            Live Neo4j evidence
+            {dataMode === "neo4j" ? "Live Neo4j evidence" : "Local review evidence"}
           </span>
 
         </div>

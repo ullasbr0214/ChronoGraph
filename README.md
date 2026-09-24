@@ -72,3 +72,33 @@ The seed creates the review case with four events and three graph relationships.
 - `/timeline` — chronological evidence timeline
 - `/graph` — graph relationship explorer
 - `/investigation` — investigation console with evidence filtering, relationship inspection, temporal gaps and sequence confidence
+
+
+## Fast review run (Windows)
+
+If Neo4j Aura is unavailable, use `RUN_REVIEW.bat`. It starts ChronoGraph in **LOCAL EVIDENCE** mode with the bundled 4-event / 3-relationship review case.
+
+Or run manually:
+
+```bat
+cd backend
+set CHRONOGRAPH_DEMO_MODE=true
+python -m uvicorn app.main:app --reload
+```
+
+In a second terminal:
+
+```bat
+cd frontend
+npm install
+npm run dev
+```
+
+Then open:
+
+- http://localhost:5173/
+- http://localhost:5173/timeline
+- http://localhost:5173/graph
+- http://localhost:5173/investigation
+
+The review mode does not require Neo4j. It is explicitly labeled **LOCAL EVIDENCE** in the UI.
