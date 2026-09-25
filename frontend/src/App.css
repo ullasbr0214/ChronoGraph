@@ -2666,3 +2666,39 @@ footer {
   font: 700 9px "DM Mono", monospace;
   letter-spacing: 1.2px;
 }
+
+.timeline-type {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  border: 1px solid rgba(155,140,255,.2);
+  border-radius: 6px;
+  color: #9b8cff;
+  background: rgba(155,140,255,.05);
+  font: 8px "DM Mono", monospace;
+  letter-spacing: .06em;
+}
+
+.timeline-description {
+  margin: 0;
+  color: #7891a6;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  color: #526c82;
+  font: 8px "DM Mono", monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.timeline-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}

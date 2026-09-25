@@ -102,3 +102,23 @@ Then open:
 - http://localhost:5173/investigation
 
 The review mode does not require Neo4j. It is explicitly labeled **LOCAL EVIDENCE** in the UI.
+
+## FINAL SUBMISSION RUN (Windows)
+
+For the final review, use the included `RUN_FINAL.bat`.
+
+1. Extract the project ZIP.
+2. Open the project folder.
+3. Double-click `RUN_FINAL.bat`.
+4. The script checks Python/npm, installs only missing dependencies, frees ports 8000/5173 if an older ChronoGraph process is using them, starts FastAPI without auto-reload, starts Vite on port 5173, and opens the Investigation page.
+5. Keep both terminal windows open while presenting.
+
+Final demo URLs:
+
+- `http://localhost:5173/`
+- `http://localhost:5173/timeline`
+- `http://localhost:5173/graph`
+- `http://localhost:5173/investigation`
+- `http://127.0.0.1:8000/docs`
+
+Neo4j is optional for the final offline review. Local evidence mode contains four deterministic events and three real graph relationships. A valid Neo4j configuration can be used later by setting `CHRONOGRAPH_DEMO_MODE=false` and providing the Neo4j credentials.
