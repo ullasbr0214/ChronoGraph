@@ -1,71 +1,117 @@
-ChronoGraph — Temporal Investigation Platform
-1. Project Overview
+# ChronoGraph — Temporal Investigation Platform
 
-ChronoGraph is a temporal intelligence and investigation platform designed to reconstruct how an incident unfolds across time, systems, and evidence.
+> A temporal intelligence platform for reconstructing incidents across time, systems, and evidence.
 
-The application collects timestamped events, organizes them chronologically, and represents relationships between events as a graph. Investigators can use the Timeline, Graph Explorer, and Investigation Console to understand an incident sequence and inspect supporting evidence.
+ChronoGraph is a full-stack investigation platform that organizes timestamped events chronologically and represents relationships between events as a graph.
 
-The project supports both:
+It provides investigators with a unified interface to explore an incident through a **Timeline**, **Graph Explorer**, and **Investigation Console**.
 
-Neo4j live graph mode for persistent graph data.
-Local Evidence mode for reliable offline demonstrations and project reviews.
-2. Key Features
-📊 Overview Dashboard
+---
 
-Provides a high-level view of the investigation case and evidence.
+## 📌 Project Overview
 
-🕒 Timeline Investigation
+ChronoGraph is designed to help analysts understand **how an incident unfolded over time** by connecting independent evidence sources into a temporal graph.
 
-Displays evidence events in chronological order, including:
+The system provides:
 
-Event ID
-Source
-Event type
-Timestamp
-Description
-🔗 Evidence Graph Explorer
+- Chronological event analysis
+- Evidence relationship visualization
+- Graph-based investigation
+- Investigation metrics
+- Temporal gap detection
+- Evidence filtering
+- Event inspection
+- Neo4j graph database integration
+- Local evidence mode for offline demonstrations
 
-Visualizes relationships between evidence events.
+---
 
-The bundled review case contains:
+## ✨ Key Features
 
-4 evidence events
-3 graph relationships
+### 📊 Overview Dashboard
 
-Example relationship chain:
+Provides a high-level view of the investigation case and available evidence.
 
-EVT-001
-   ↓ LEADS_TO
-EVT-002
-   ↓ CAUSED_BY
-EVT-003
-   ↓ LEADS_TO
-EVT-004
-🔍 Investigation Console
+### 🕒 Timeline Investigation
 
-Provides investigation metrics such as:
+Displays evidence events chronologically with:
 
-Total events
-Graph relationships
-Unexplained temporal gaps
-Relationship/sequence coverage
-Evidence filtering
-Event inspection
-🔎 Evidence Filtering
+- Event ID
+- Source
+- Event type
+- Timestamp
+- Description
 
-Investigators can filter evidence based on available event/source information.
+### 🔗 Graph Explorer
 
-🗄️ Neo4j Integration
+Visualizes relationships between evidence events and allows individual evidence nodes to be inspected.
 
-ChronoGraph includes Neo4j integration for storing and querying graph relationships.
+The bundled investigation contains:
 
-📴 Local Evidence Mode
+**4 Evidence Events**
 
-When Neo4j is unavailable, the application can run using deterministic local evidence.
+**3 Graph Relationships**
 
-This mode allows the complete investigation workflow to be demonstrated without requiring an external database connection.
+### 🔍 Investigation Console
 
-3. Technology Stack
+Provides investigation-oriented metrics including:
+
+- Total events
+- Graph relationships
+- Unexplained temporal gaps
+- Sequence/relationship coverage
+- Evidence filtering
+- Event inspection
+
+### 🗄️ Neo4j Integration
+
+ChronoGraph supports Neo4j for persistent graph storage and graph relationship queries.
+
+### 📴 Local Evidence Mode
+
+The project also includes a deterministic local evidence dataset.
+
+This allows the complete investigation workflow to run without requiring an external Neo4j database.
+
+---
+
+# 🏗️ System Architecture
+
+```text
+┌──────────────────────────────────────────┐
+│              React Frontend              │
+│                                          │
+│  Overview   Timeline   Graph   Investigation │
+└───────────────────┬──────────────────────┘
+                    │
+                    │ HTTP / REST API
+                    ▼
+┌──────────────────────────────────────────┐
+│             FastAPI Backend              │
+│                                          │
+│  Graph API    Evidence API    Health API │
+└───────────────────┬──────────────────────┘
+                    │
+                    ▼
+             ┌──────────────┐
+             │    Neo4j     │
+             │ Graph Store  │
+             └──────────────┘
+
+          When Neo4j is unavailable:
+
+┌──────────────────────────────────────────┐
+│              React Frontend              │
+└───────────────────┬──────────────────────┘
+                    │
+                    ▼
+┌──────────────────────────────────────────┐
+│             FastAPI Backend              │
+└───────────────────┬──────────────────────┘
+                    │
+                    ▼
+          Local Evidence Dataset
+🧰 Technology Stack
 Frontend
 React
 Vite
@@ -73,7 +119,6 @@ JavaScript
 React Router
 Axios
 Lucide React
-Recharts
 CSS
 Backend
 Python
@@ -83,7 +128,14 @@ Pydantic
 Pydantic Settings
 Database
 Neo4j
-4. Project Structure
+Development Tools
+Git
+GitHub
+Visual Studio Code
+npm
+REST API
+Swagger / OpenAPI
+📁 Project Structure
 ChronoGraph/
 │
 ├── backend/
@@ -116,38 +168,33 @@ ChronoGraph/
 ├── START_FRONTEND.bat
 ├── README.md
 └── SUBMISSION_GUIDE.md
-5. Requirements
+⚙️ Requirements
 
-Install the following before running the project:
+Before running ChronoGraph, install:
 
-Python
+Python 3.10+
+Node.js
+npm
 
-Python 3.10+ is recommended.
-
-Check:
+Check your installations:
 
 python --version
-Node.js
-
-Node.js and npm are required for the React frontend.
-
-Check:
-
 node --version
 npm --version
-6. Quick Start — Windows
+🚀 Quick Start — Windows
 
-For the final project demonstration, the easiest method is:
+The easiest way to run the final demonstration is using the included startup script.
 
-Step 1
+1. Extract the project
 
-Extract the project ZIP.
+Extract the ChronoGraph ZIP file.
 
-Step 2
+2. Open the project folder
 
-Open the project folder.
+Open:
 
-Step 3
+ChronoGraph/
+3. Start the application
 
 Double-click:
 
@@ -155,45 +202,152 @@ RUN_FINAL.bat
 
 The script starts the backend and frontend.
 
-Step 4
-
-Open:
-
+4. Open the application
 http://localhost:5173/
+🖥️ Application Pages
+Page	Route	Purpose
+Overview	/	Investigation overview and metrics
+Timeline	/timeline	Chronological evidence analysis
+Graph Explorer	/graph	Evidence relationship visualization
+Investigation	/investigation	Investigation metrics and evidence analysis
+🔎 Investigation Workflow
 
-The main pages are:
+ChronoGraph follows this workflow:
 
-http://localhost:5173/
-http://localhost:5173/timeline
-http://localhost:5173/graph
-http://localhost:5173/investigation
+Evidence Collection
+        ↓
+Temporal Ordering
+        ↓
+Graph Relationship Analysis
+        ↓
+Evidence Investigation
+        ↓
+Incident Reconstruction
 
-Backend Swagger documentation:
+The investigator can move between the Timeline and Graph Explorer before using the Investigation Console to inspect the overall evidence sequence.
+
+🧪 Bundled Investigation Dataset
+
+The local review dataset contains four evidence events.
+
+Event ID	Event
+EVT-001	Login Attempt
+EVT-002	Multiple Failed Logins
+EVT-003	Unknown IP Connection
+EVT-004	Account Access
+Event Relationship Chain
+EVT-001
+   │
+   │ LEADS_TO
+   ▼
+EVT-002
+   │
+   │ CAUSED_BY
+   ▼
+EVT-003
+   │
+   │ LEADS_TO
+   ▼
+EVT-004
+
+This demonstrates how ChronoGraph connects individual evidence events into a temporal investigation sequence.
+
+📊 Investigation Metrics
+
+For the bundled complete review chain, the application can display:
+
+Metric	Value
+Total Events	4
+Graph Relationships	3
+Unexplained Gaps	0
+Relationship Coverage	100%
+
+These values describe the bundled demonstration dataset and are not a claim about an external real-world incident.
+
+🔌 Backend API
+
+The FastAPI backend provides the following endpoints.
+
+Health
+GET /api/v1/health
+Graph Health
+GET /api/v1/graph/health
+Get Events
+GET /api/v1/graph/events
+Get Graph
+GET /api/v1/graph/
+Get Event
+GET /api/v1/graph/events/{event_id}
+Get Related Events
+GET /api/v1/graph/events/{event_id}/related
+Create Event
+POST /api/v1/graph/events
+API Documentation
+
+FastAPI provides interactive Swagger documentation at:
 
 http://127.0.0.1:8000/docs
+📴 Local Evidence Mode
 
-Keep the backend and frontend terminal windows open while demonstrating the project.
+ChronoGraph includes a local evidence mode for reliable offline demonstrations.
 
-7. Manual Setup
+Enable it on Windows CMD with:
 
-If the Windows runner cannot be used, start the backend manually.
+set "CHRONOGRAPH_DEMO_MODE=true"
+
+Then start the backend:
+
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+Local Evidence mode does not require an external Neo4j server.
+
+The application displays the current mode so that the user can distinguish local review evidence from live database data.
+
+🗄️ Neo4j Live Mode
+
+ChronoGraph also supports a live Neo4j database.
+
+Create:
+
+backend/.env
+
+using the provided:
+
+backend/.env.example
+
+Configure the Neo4j connection:
+
+NEO4J_URI=neo4j+s://YOUR_INSTANCE.databases.neo4j.io
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=YOUR_PASSWORD
+CHRONOGRAPH_DEMO_MODE=false
+
+After configuring a valid Neo4j database, the database can be seeded using:
+
+python seed_database.py
+
+A valid Neo4j instance and credentials are required for live database mode.
+
+🧑‍💻 Manual Installation
+
+If RUN_FINAL.bat cannot be used, the backend and frontend can be started manually.
 
 Backend
-
-Open a terminal:
-
 cd backend
+
+Install dependencies:
+
+pip install -r requirements.txt
 
 Enable local evidence mode:
 
-Windows CMD
 set "CHRONOGRAPH_DEMO_MODE=true"
 
 Start FastAPI:
 
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-Backend:
+Backend URL:
 
 http://127.0.0.1:8000
 
@@ -202,7 +356,7 @@ Swagger:
 http://127.0.0.1:8000/docs
 Frontend
 
-Open a second terminal:
+Open another terminal:
 
 cd frontend
 
@@ -214,200 +368,85 @@ Start the development server:
 
 npm run dev
 
-Frontend:
+Frontend URL:
 
 http://localhost:5173
-8. Local Evidence Mode
+🔧 Environment Configuration
+Frontend
 
-ChronoGraph includes a deterministic local evidence dataset for offline demonstrations.
+Create:
 
-The review dataset contains four events:
+frontend/.env
 
-ID	Event
-EVT-001	Login Attempt
-EVT-002	Multiple Failed Logins
-EVT-003	Unknown IP Connection
-EVT-004	Account Access
+Example:
 
-The relationships are:
-
-EVT-001 → EVT-002
-LEADS_TO
-
-EVT-002 → EVT-003
-CAUSED_BY
-
-EVT-003 → EVT-004
-LEADS_TO
-
-Local Evidence mode is explicitly shown in the application UI.
-
-It is not intended to claim that the application is connected to a live Neo4j database.
-
-9. Neo4j Live Mode
-
-ChronoGraph also supports a live Neo4j database.
+VITE_API_BASE_URL=http://127.0.0.1:8000
+Backend
 
 Create:
 
 backend/.env
 
-using:
+Example:
 
-backend/.env.example
-
-Configure:
-
-NEO4J_URI=neo4j+s://YOUR_INSTANCE.databases.neo4j.io
+NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=YOUR_PASSWORD
-CHRONOGRAPH_DEMO_MODE=false
+NEO4J_PASSWORD=your_password
+CHRONOGRAPH_DEMO_MODE=true
+🧭 Demo Presentation Flow
 
-After configuring a valid Neo4j connection, seed the database:
-
-python seed_database.py
-
-The seed process creates the review case and its graph relationships.
-
-10. API Endpoints
-
-Main backend endpoints include:
-
-GET  /api/v1/health
-
-Graph endpoints:
-
-GET  /api/v1/graph/
-GET  /api/v1/graph/health
-GET  /api/v1/graph/events
-GET  /api/v1/graph/events/{event_id}
-GET  /api/v1/graph/events/{event_id}/related
-POST /api/v1/graph/events
-
-Interactive API documentation:
-
-http://127.0.0.1:8000/docs
-11. Application Pages
-Overview
-
-Introduces the ChronoGraph investigation case and provides overall metrics.
-
-Timeline
-
-Shows evidence chronologically so the investigator can understand the sequence of events.
-
-Graph Explorer
-
-Displays evidence nodes and relationships and allows individual evidence nodes to be inspected.
-
-Investigation
-
-Provides an investigation-oriented view containing:
-
-Evidence filtering
-Event counts
-Relationship counts
-Temporal gap information
-Relationship coverage
-Evidence inspection
-12. Final Demonstration Flow
-
-For a project presentation, use this sequence:
+For a project demonstration, use the following sequence:
 
 1. Overview
 
-Explain:
-
-ChronoGraph is designed to reconstruct incidents from timestamped evidence and graph relationships.
+Introduce ChronoGraph as a temporal investigation platform.
 
 2. Timeline
 
-Show how the four events occur chronologically.
+Show the chronological sequence of the four evidence events.
 
 3. Graph Explorer
 
-Show how the four evidence events are connected through three relationships.
+Demonstrate how the events are connected through graph relationships.
 
 4. Investigation Console
 
-Show:
+Show the investigation metrics and evidence analysis.
 
-4 Events
-3 Graph Relationships
-0 Unexplained Gaps
-100% Relationship Coverage
+Recommended presentation flow:
 
-for the bundled complete review chain.
-
-13. Project Architecture
-
-The application follows this basic architecture:
-
-                ┌─────────────────────┐
-                │     React Frontend  │
-                │                     │
-                │ Overview            │
-                │ Timeline            │
-                │ Graph Explorer      │
-                │ Investigation       │
-                └──────────┬──────────┘
-                           │
-                         HTTP
-                           │
-                ┌──────────▼──────────┐
-                │    FastAPI Backend  │
-                │                     │
-                │ Graph API           │
-                │ Evidence API        │
-                │ Investigation Data  │
-                └──────────┬──────────┘
-                           │
-                    ┌──────▼──────┐
-                    │    Neo4j    │
-                    │ Graph Store │
-                    └─────────────┘
-
-When Neo4j is unavailable:
-
-React Frontend
-      │
-      ▼
-FastAPI Backend
-      │
-      ▼
-Local Evidence Dataset
-14. Demo Mode vs Live Mode
-Mode	Database	Purpose
-Local Evidence	Not required	Offline review/demo
-Neo4j Live	Neo4j required	Persistent graph data
-
-For the final project demonstration, Local Evidence mode is sufficient to demonstrate the complete investigation workflow.
-
-15. Troubleshooting
-Backend does not start
+Overview
+   ↓
+Timeline
+   ↓
+Graph Explorer
+   ↓
+Investigation
+🛠️ Troubleshooting
+Backend cannot start
 
 Check whether port 8000 is already being used:
 
 netstat -ano | findstr :8000
 
-Stop the existing Python process if necessary and restart the project.
+Stop the process if required and restart the backend.
 
-Frontend does not start
+Frontend cannot start
 
-Install dependencies:
+Install the frontend dependencies:
 
 cd frontend
 npm install
 npm run dev
-Frontend cannot reach backend
+Frontend cannot connect to backend
 
 Check:
 
 http://127.0.0.1:8000/api/v1/health
 
-The backend must be running before using the frontend.
+The backend must be running.
 
-Neo4j unavailable
+Neo4j is unavailable
 
 Use Local Evidence mode:
 
@@ -415,24 +454,42 @@ set "CHRONOGRAPH_DEMO_MODE=true"
 
 Neo4j is not required for the offline demonstration.
 
-16. Final Project Status
+🔐 Important Configuration Note
 
-ChronoGraph provides a complete working demonstration of a temporal investigation workflow consisting of:
+Do not commit real database passwords or private credentials to GitHub.
 
-Evidence
-   ↓
-Timeline
-   ↓
-Graph Relationships
-   ↓
-Investigation
-   ↓
-Evidence Analysis
+Use:
 
-The final demonstration can be run locally without requiring an external Neo4j connection.
+.env
 
-Author
+for local credentials and keep:
 
-ChronoGraph Project
+.env.example
 
-Technologies: React · FastAPI · Neo4j · Python · JavaScript
+in the repository as a configuration template.
+
+📌 Project Status
+
+ChronoGraph currently provides a complete demonstration workflow for:
+
+Temporal evidence organization
+Event sequencing
+Graph relationship visualization
+Evidence inspection
+Investigation metrics
+Local evidence analysis
+Neo4j integration
+
+The project can be demonstrated using the bundled local evidence dataset without requiring an external database connection.
+
+👨‍💻 Author
+
+Ullas B R
+
+Project: ChronoGraph
+Domain: Temporal Intelligence / Graph-Based Investigation
+Technologies: React, FastAPI, Python, Neo4j, JavaScript
+
+📜 License
+
+This project is intended for educational, academic, and demonstration purposes.
