@@ -195,11 +195,6 @@ export default function GraphPage() {
 
       const response = await getGraph();
 
-      console.log(
-        "CHRONOGRAPH GRAPH RESPONSE:",
-        response
-      );
-
       setDataMode(response?.mode || "neo4j");
 
       const backendNodes = Array.isArray(
@@ -278,15 +273,6 @@ export default function GraphPage() {
         }
       );
 
-      console.log(
-        "GRAPH NODES:",
-        sortedEvents
-      );
-
-      console.log(
-        "GRAPH RELATIONSHIPS:",
-        normalizedRelationships
-      );
     } catch (err) {
       console.error(
         "Failed to load ChronoGraph:",
@@ -718,12 +704,12 @@ export default function GraphPage() {
         relationships.length /
         possibleLinks;
 
-      return Math.min(
-        98,
-        Math.round(
-          70 + ratio * 20
-        )
-      );
+      // A complete chronological chain is fully covered.
+      if (relationships.length >= possibleLinks) {
+        return 100;
+      }
+
+      return Math.min(99, Math.round(70 + ratio * 30));
     }, [
       events.length,
       relationships.length,
